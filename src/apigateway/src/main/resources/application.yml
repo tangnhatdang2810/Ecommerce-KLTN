@@ -1,0 +1,64 @@
+server:
+  port: ${PORT:9090}
+
+spring:
+  application:
+    name: api-gateway
+  cloud:
+    gateway:
+      routes:
+        # ── Auth Service ──────────────────────────────
+        - id: auth-service
+          uri: http://${AUTH_SERVICE_ADDR:authservice:8080}
+          predicates:
+            - Path=/api/register,/api/login,/api/profile
+
+        # ── Product Catalog Service ───────────────────
+        - id: product-catalog-service
+          uri: http://${PRODUCT_CATALOG_SERVICE_ADDR:productcatalogservice:3550}
+          predicates:
+            - Path=/api/products/**,/api/products
+
+        # ── Cart Service ──────────────────────────────
+        - id: cart-service
+          uri: http://${CART_SERVICE_ADDR:cartservice:7070}
+          predicates:
+            - Path=/api/cart/**
+
+        # ── Checkout Service ──────────────────────────
+        - id: checkout-service
+          uri: http://${CHECKOUT_SERVICE_ADDR:checkoutservice:5050}
+          predicates:
+            - Path=/api/checkout/**,/api/checkout
+
+        # ── Payment Service ───────────────────────────
+        - id: payment-service
+          uri: http://${PAYMENT_SERVICE_ADDR:paymentservice:50051}
+          predicates:
+            - Path=/api/payment/**
+
+        # ── Shipping Service ──────────────────────────
+        - id: shipping-service
+          uri: http://${SHIPPING_SERVICE_ADDR:shippingservice:50051}
+          predicates:
+            - Path=/api/shipping/**
+
+      default-filters:
+        - DedupeResponseHeader=Access-Control-Allow-Origin Access-Control-Allow-Credentials, RETAIN_UNIQUE
+
+# Actuator health endpoint
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,gateway
+  endpoint:
+    health:
+      show-details: always
+    gateway:
+      enabled: true
+
+logging:
+  level:
+    org.springframework.cloud.gateway: INFO
+    hipstershop: DEBUG

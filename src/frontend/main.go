@@ -52,6 +52,7 @@ type frontendServer struct {
 	checkoutSvcAddr       string
 	shippingSvcAddr       string
 	authSvcAddr           string
+	apiGatewayAddr        string
 
 	httpClient *http.Client
 }
@@ -103,6 +104,17 @@ func main() {
 	mustMapEnv(&svc.checkoutSvcAddr, "CHECKOUT_SERVICE_ADDR")
 	mustMapEnv(&svc.shippingSvcAddr, "SHIPPING_SERVICE_ADDR")
 	mustMapEnv(&svc.authSvcAddr, "AUTH_SERVICE_ADDR")
+
+	// If API_GATEWAY_ADDR is set, route all backend calls through the gateway
+	if gw := os.Getenv("API_GATEWAY_ADDR"); gw != "" {
+		svc.apiGatewayAddr = gw
+		svc.productCatalogSvcAddr = gw
+		svc.cartSvcAddr = gw
+		svc.checkoutSvcAddr = gw
+		svc.shippingSvcAddr = gw
+		svc.authSvcAddr = gw
+		log.Infof("Using API Gateway at %s for all backend calls", gw)
+	}
 
 	r := mux.NewRouter()
 	r.HandleFunc(baseUrl+"/", svc.homeHandler).Methods(http.MethodGet, http.MethodHead)

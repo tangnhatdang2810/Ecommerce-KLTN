@@ -63,6 +63,7 @@ type OrderResult struct {
 	Email              string       `json:"email"`
 	TotalCost          *money.Money `json:"totalCost"`
 	CreatedAt          string       `json:"createdAt"`
+	UserCurrency       string       `json:"userCurrency"`
 }
 
 // PlaceOrderRequest represents a checkout request.

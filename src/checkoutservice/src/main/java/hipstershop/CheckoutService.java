@@ -67,8 +67,8 @@ public class CheckoutService {
         // 3. Get shipping quote
         Money shippingCost = quoteShipping(request.getAddress(), cartItems);
 
-        // 4. Calculate total
-        Money total = new Money(request.getUserCurrency(), 0, 0);
+        // 4. Calculate total (all prices are in USD internally)
+        Money total = new Money("USD", 0, 0);
         total = MoneyUtils.sum(total, shippingCost);
         for (OrderItem item : orderItems) {
             Money itemCost = MoneyUtils.multiplySlow(item.getCost(), item.getItem().getQuantity());
@@ -97,6 +97,7 @@ public class CheckoutService {
         orderResult.setUserId(request.getUserId());
         orderResult.setEmail(request.getEmail());
         orderResult.setTotalCost(total);
+        orderResult.setUserCurrency(request.getUserCurrency() != null ? request.getUserCurrency() : "USD");
         orderResult.setCreatedAt(Instant.now().toString());
 
         // Save order to MongoDB
@@ -124,6 +125,7 @@ public class CheckoutService {
                     .append("shippingCost", moneyToDoc(order.getShippingCost()))
                     .append("shippingAddress", addressToDoc(order.getShippingAddress()))
                     .append("totalCost", moneyToDoc(order.getTotalCost()))
+                    .append("userCurrency", order.getUserCurrency())
                     .append("createdAt", order.getCreatedAt());
 
             List<Document> itemDocs = new ArrayList<>();
@@ -166,6 +168,7 @@ public class CheckoutService {
         order.setEmail(doc.getString("email"));
         order.setShippingTrackingId(doc.getString("shippingTrackingId"));
         order.setCreatedAt(doc.getString("createdAt"));
+        order.setUserCurrency(doc.getString("userCurrency") != null ? doc.getString("userCurrency") : "USD");
 
         Document costDoc = doc.get("shippingCost", Document.class);
         if (costDoc != null) {

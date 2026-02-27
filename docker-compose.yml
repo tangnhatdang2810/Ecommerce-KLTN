@@ -206,6 +206,32 @@ services:
     restart: on-failure
 
   # ——————————————————————————————————————————
+  # API Gateway
+  # ——————————————————————————————————————————
+  apigateway:
+    build:
+      context: ./src/apigateway
+    container_name: apigateway
+    ports:
+      - "9090:9090"
+    environment:
+      PORT: "9090"
+      AUTH_SERVICE_ADDR: "authservice:8080"
+      PRODUCT_CATALOG_SERVICE_ADDR: "productcatalogservice:3550"
+      CART_SERVICE_ADDR: "cartservice:7070"
+      CHECKOUT_SERVICE_ADDR: "checkoutservice:5050"
+      PAYMENT_SERVICE_ADDR: "paymentservice:50051"
+      SHIPPING_SERVICE_ADDR: "shippingservice:50051"
+    depends_on:
+      - authservice
+      - cartservice
+      - productcatalogservice
+      - checkoutservice
+      - paymentservice
+      - shippingservice
+    restart: on-failure
+
+  # ——————————————————————————————————————————
   # Frontend
   # ——————————————————————————————————————————
   frontend:
@@ -221,13 +247,10 @@ services:
       SHIPPING_SERVICE_ADDR: "shippingservice:50051"
       CHECKOUT_SERVICE_ADDR: "checkoutservice:5050"
       AUTH_SERVICE_ADDR: "authservice:8080"
+      API_GATEWAY_ADDR: "apigateway:9090"
       ENABLE_PROFILER: "0"
     depends_on:
-      - authservice
-      - cartservice
-      - productcatalogservice
-      - checkoutservice
-      - shippingservice
+      - apigateway
     restart: on-failure
 
 volumes:

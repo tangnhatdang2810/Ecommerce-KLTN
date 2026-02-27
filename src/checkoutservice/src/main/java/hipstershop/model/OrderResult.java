@@ -13,6 +13,7 @@ public class OrderResult {
     private String email;
     private Money totalCost;
     private String createdAt;
+    private String userCurrency;
 
     public OrderResult() {}
 
@@ -34,4 +35,6 @@ public class OrderResult {
     public void setTotalCost(Money totalCost) { this.totalCost = totalCost; }
     public String getCreatedAt() { return createdAt; }
     public void setCreatedAt(String createdAt) { this.createdAt = createdAt; }
+    public String getUserCurrency() { return userCurrency; }
+    public void setUserCurrency(String userCurrency) { this.userCurrency = userCurrency; }
 }

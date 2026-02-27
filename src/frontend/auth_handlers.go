@@ -70,6 +70,23 @@ func (fe *frontendServer) loginSubmitHandler(w http.ResponseWriter, r *http.Requ
 	})
 
 	log.WithField("username", result.Username).Info("user logged in successfully")
+
+	// Migrate cart from anonymous session to logged-in user
+	anonSessionID := sessionID(r)
+	if anonSessionID != "" && anonSessionID != result.Username {
+		anonCart, err := fe.getCart(r.Context(), anonSessionID)
+		if err == nil && len(anonCart) > 0 {
+			for _, item := range anonCart {
+				if insertErr := fe.insertCart(r.Context(), result.Username, item.ProductId, item.Quantity); insertErr != nil {
+					log.WithField("error", insertErr).Warn("failed to migrate cart item")
+				}
+			}
+			// Clear the anonymous session cart
+			_ = fe.emptyCart(r.Context(), anonSessionID)
+			log.WithField("items", len(anonCart)).Info("migrated anonymous cart to user cart")
+		}
+	}
+
 	w.Header().Set("Location", baseUrl+"/")
 	w.WriteHeader(http.StatusFound)
 }

@@ -66,7 +66,7 @@ func (fe *frontendServer) homeHandler(w http.ResponseWriter, r *http.Request) {
 		renderHTTPError(log, r, w, errors.Wrap(err, "could not retrieve products"), http.StatusInternalServerError)
 		return
 	}
-	cart, err := fe.getCart(r.Context(), sessionID(r))
+	cart, err := fe.getCart(r.Context(), cartUserID(r))
 	if err != nil {
 		renderHTTPError(log, r, w, errors.Wrap(err, "could not retrieve cart"), http.StatusInternalServerError)
 		return
@@ -158,7 +158,7 @@ func (fe *frontendServer) productHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	cart, err := fe.getCart(r.Context(), sessionID(r))
+	cart, err := fe.getCart(r.Context(), cartUserID(r))
 	if err != nil {
 		renderHTTPError(log, r, w, errors.Wrap(err, "could not retrieve cart"), http.StatusInternalServerError)
 		return
@@ -223,7 +223,7 @@ func (fe *frontendServer) addToCartHandler(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	if err := fe.insertCart(r.Context(), sessionID(r), p.Id, int32(payload.Quantity)); err != nil {
+	if err := fe.insertCart(r.Context(), cartUserID(r), p.Id, int32(payload.Quantity)); err != nil {
 		renderHTTPError(log, r, w, errors.Wrap(err, "failed to add to cart"), http.StatusInternalServerError)
 		return
 	}
@@ -235,7 +235,7 @@ func (fe *frontendServer) emptyCartHandler(w http.ResponseWriter, r *http.Reques
 	log := r.Context().Value(ctxKeyLog{}).(logrus.FieldLogger)
 	log.Debug("emptying cart")
 
-	if err := fe.emptyCart(r.Context(), sessionID(r)); err != nil {
+	if err := fe.emptyCart(r.Context(), cartUserID(r)); err != nil {
 		renderHTTPError(log, r, w, errors.Wrap(err, "failed to empty cart"), http.StatusInternalServerError)
 		return
 	}
@@ -254,7 +254,7 @@ func (fe *frontendServer) updateCartItemHandler(w http.ResponseWriter, r *http.R
 	}
 	log.WithField("product_id", productID).WithField("quantity", quantity).Debug("updating cart item quantity")
 
-	if err := fe.updateCartItemQuantity(r.Context(), sessionID(r), productID, int32(quantity)); err != nil {
+	if err := fe.updateCartItemQuantity(r.Context(), cartUserID(r), productID, int32(quantity)); err != nil {
 		renderHTTPError(log, r, w, errors.Wrap(err, "failed to update cart item"), http.StatusInternalServerError)
 		return
 	}
@@ -270,14 +270,14 @@ func (fe *frontendServer) viewCartHandler(w http.ResponseWriter, r *http.Request
 		renderHTTPError(log, r, w, errors.Wrap(err, "could not retrieve currencies"), http.StatusInternalServerError)
 		return
 	}
-	cart, err := fe.getCart(r.Context(), sessionID(r))
+	cart, err := fe.getCart(r.Context(), cartUserID(r))
 	if err != nil {
 		renderHTTPError(log, r, w, errors.Wrap(err, "could not retrieve cart"), http.StatusInternalServerError)
 		return
 	}
 
 	// ignores the error retrieving recommendations since it is not critical
-	recommendations, err := fe.getRecommendations(r.Context(), sessionID(r), cartIDs(cart))
+	recommendations, err := fe.getRecommendations(r.Context(), cartUserID(r), cartIDs(cart))
 	if err != nil {
 		log.WithField("error", err).Warn("failed to get product recommendations")
 	}
@@ -342,6 +342,13 @@ func (fe *frontendServer) placeOrderHandler(w http.ResponseWriter, r *http.Reque
 	log := r.Context().Value(ctxKeyLog{}).(logrus.FieldLogger)
 	log.Debug("placing order")
 
+	// Require login to place order
+	if !isLoggedIn(r) {
+		w.Header().Set("Location", baseUrl+"/login")
+		w.WriteHeader(http.StatusFound)
+		return
+	}
+
 	var (
 		email         = r.FormValue("email")
 		streetAddress = r.FormValue("street_address")
@@ -379,7 +386,7 @@ func (fe *frontendServer) placeOrderHandler(w http.ResponseWriter, r *http.Reque
 			CreditCardExpirationMonth: int32(payload.CcMonth),
 			CreditCardExpirationYear:  int32(payload.CcYear),
 			CreditCardCvv:             int32(payload.CcCVV)},
-		UserId:       sessionID(r),
+		UserId:       cartUserID(r),
 		UserCurrency: currentCurrency(r),
 		Address: &Address{
 			StreetAddress: payload.StreetAddress,
@@ -400,6 +407,14 @@ func (fe *frontendServer) placeOrderHandler(w http.ResponseWriter, r *http.Reque
 	for _, v := range order.Order.Items {
 		multPrice := money.MultiplySlow(*v.Cost, uint32(v.Item.Quantity))
 		totalPaid = money.Must(money.Sum(totalPaid, multPrice))
+	}
+
+	// Convert totalPaid to user's selected currency
+	userCur := currentCurrency(r)
+	if userCur != "USD" {
+		if converted, err := fe.convertCurrency(r.Context(), &totalPaid, userCur); err == nil {
+			totalPaid = *converted
+		}
 	}
 
 	currencies, err := fe.getCurrencies(r.Context())
@@ -537,6 +552,15 @@ func sessionID(r *http.Request) string {
 	return ""
 }
 
+// cartUserID returns the username if logged in, otherwise falls back to sessionID.
+// This ensures cart and order operations use a consistent user identifier.
+func cartUserID(r *http.Request) string {
+	if u := getAuthUsername(r); u != "" {
+		return u
+	}
+	return sessionID(r)
+}
+
 func cartIDs(c []*CartItem) []string {
 	out := make([]string, len(c))
 	for i, v := range c {
@@ -587,7 +611,7 @@ func (fe *frontendServer) searchHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	cart, err := fe.getCart(r.Context(), sessionID(r))
+	cart, err := fe.getCart(r.Context(), cartUserID(r))
 	if err != nil {
 		renderHTTPError(log, r, w, errors.Wrap(err, "could not retrieve cart"), http.StatusInternalServerError)
 		return
@@ -641,13 +665,21 @@ func (fe *frontendServer) orderHistoryHandler(w http.ResponseWriter, r *http.Req
 	log := r.Context().Value(ctxKeyLog{}).(logrus.FieldLogger)
 	log.Debug("view order history")
 
-	orders, err := fe.getOrderHistory(r.Context(), sessionID(r))
+	// Require login to view order history
+	username := getAuthUsername(r)
+	if username == "" {
+		w.Header().Set("Location", baseUrl+"/login")
+		w.WriteHeader(http.StatusFound)
+		return
+	}
+
+	orders, err := fe.getOrderHistory(r.Context(), username)
 	if err != nil {
 		renderHTTPError(log, r, w, errors.Wrap(err, "could not retrieve order history"), http.StatusInternalServerError)
 		return
 	}
 
-	// For each order, resolve product names for display
+	// For each order, resolve product names and convert currency for display
 	type orderItemView struct {
 		ProductName string
 		ProductId   string
@@ -665,6 +697,12 @@ func (fe *frontendServer) orderHistoryHandler(w http.ResponseWriter, r *http.Req
 
 	var orderViews []orderView
 	for _, o := range orders {
+		// Determine the currency used for this order
+		orderCurrency := o.UserCurrency
+		if orderCurrency == "" {
+			orderCurrency = "USD"
+		}
+
 		sc := money.Money{}
 		if o.ShippingCost != nil {
 			sc = *o.ShippingCost
@@ -673,6 +711,17 @@ func (fe *frontendServer) orderHistoryHandler(w http.ResponseWriter, r *http.Req
 		if o.TotalCost != nil {
 			tc = *o.TotalCost
 		}
+
+		// Convert shipping cost and total from USD to the order's currency
+		if orderCurrency != "USD" {
+			if converted, err := fe.convertCurrency(r.Context(), &sc, orderCurrency); err == nil {
+				sc = *converted
+			}
+			if converted, err := fe.convertCurrency(r.Context(), &tc, orderCurrency); err == nil {
+				tc = *converted
+			}
+		}
+
 		ov := orderView{
 			OrderId:            o.OrderId,
 			ShippingTrackingId: o.ShippingTrackingId,
@@ -684,6 +733,12 @@ func (fe *frontendServer) orderHistoryHandler(w http.ResponseWriter, r *http.Req
 			c := money.Money{}
 			if item.Cost != nil {
 				c = *item.Cost
+			}
+			// Convert item cost from USD to order's currency
+			if orderCurrency != "USD" {
+				if converted, err := fe.convertCurrency(r.Context(), &c, orderCurrency); err == nil {
+					c = *converted
+				}
 			}
 			iv := orderItemView{
 				ProductId: item.Item.ProductId,
