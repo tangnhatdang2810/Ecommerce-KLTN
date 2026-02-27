@@ -1,0 +1,99 @@
+<!--
+ Copyright 2020 Google LLC
+
+ Licensed under the Apache License, Version 2.0 (the "License");
+ you may not use this file except in compliance with the License.
+ You may obtain a copy of the License at
+
+      http://www.apache.org/licenses/LICENSE-2.0
+
+ Unless required by applicable law or agreed to in writing, software
+ distributed under the License is distributed on an "AS IS" BASIS,
+ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ See the License for the specific language governing permissions and
+ limitations under the License.
+-->
+
+{{ define "home" }}
+
+{{ template "header" . }}
+<main role="main" class="home">
+
+  <!-- Hero Banner -->
+  <section class="hero-banner">
+    <div class="hero-overlay"></div>
+    <div class="hero-content">
+      <h1 class="hero-title">Discover Your Style</h1>
+      <p class="hero-subtitle">Curated fashion & accessories for the modern you</p>
+      <a href="#products" class="hero-cta">Shop Now <i class="fas fa-arrow-right"></i></a>
+    </div>
+  </section>
+
+  <!-- Features Bar -->
+  <section class="features-bar">
+    <div class="container">
+      <div class="row text-center">
+        <div class="col-md-4 feature-item">
+          <i class="fas fa-shipping-fast"></i>
+          <span>Fast & Reliable Delivery</span>
+        </div>
+        <div class="col-md-4 feature-item">
+          <i class="fas fa-undo-alt"></i>
+          <span>30-Day Returns</span>
+        </div>
+        <div class="col-md-4 feature-item">
+          <i class="fas fa-lock"></i>
+          <span>Secure Checkout</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Products Section -->
+  <section class="products-section" id="products">
+    <div class="container">
+      <div class="section-header">
+        <span class="section-tag">Our Collection</span>
+        <h2 class="section-title">Trending Products</h2>
+        <p class="section-desc">Handpicked styles that define the season</p>
+      </div>
+
+      <div class="row products-grid">
+        {{ range $.products }}
+        <div class="col-lg-4 col-md-6 mb-4">
+          <div class="product-card">
+            <a href="{{ $.baseUrl }}/product/{{.Item.Id}}" class="product-card-link">
+              <div class="product-card-img-wrapper">
+                <img loading="lazy" src="{{ $.baseUrl }}{{.Item.Picture}}" alt="{{ .Item.Name }}">
+                <div class="product-card-overlay">
+                  <span class="quick-view">Quick View</span>
+                </div>
+              </div>
+            </a>
+            <div class="product-card-body">
+              <h3 class="product-card-name">
+                <a href="{{ $.baseUrl }}/product/{{.Item.Id}}">{{ .Item.Name }}</a>
+              </h3>
+              <div class="product-card-price">{{ renderMoney .Price }}</div>
+            </div>
+          </div>
+        </div>
+        {{ end }}
+      </div>
+    </div>
+  </section>
+
+  <div>
+    {{ if $.recommendations}}
+      {{ template "recommendations" $ }}
+    {{ end }}
+  </div>
+  <div class="ad">
+   {{ if $.ad }}{{ template "text_ad" $ }}{{ end }}
+  </div>
+
+</main>
+
+{{ template "footer" . }}
+
+{{ end }}

@@ -1,0 +1,105 @@
+<!--
+ Copyright 2020 Google LLC
+
+ Licensed under the Apache License, Version 2.0 (the "License");
+ you may not use this file except in compliance with the License.
+ You may obtain a copy of the License at
+
+      http://www.apache.org/licenses/LICENSE-2.0
+
+ Unless required by applicable law or agreed to in writing, software
+ distributed under the License is distributed on an "AS IS" BASIS,
+ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ See the License for the specific language governing permissions and
+ limitations under the License.
+-->
+
+{{ define "product" }}
+{{ template "header" . }}
+
+<main role="main">
+  <div class="container" style="max-width: 1100px; padding-top: 40px; padding-bottom: 60px;">
+    <a href="{{ $.baseUrl }}/" class="btn-back-home">
+      <i class="fas fa-arrow-left"></i> Continue Shopping
+    </a>
+    <div class="product-detail-card">
+      <div class="row">
+        <div class="col-md-6">
+          <div class="product-detail-img-wrapper">
+            <img class="product-detail-img" alt="{{ $.product.Item.Name }}" src="{{ $.baseUrl }}{{$.product.Item.Picture}}" />
+          </div>
+        </div>
+        <div class="col-md-6 d-flex align-items-center">
+          <div class="product-detail-info">
+            <span class="product-detail-badge">In stock</span>
+            <h1 class="product-detail-name">{{ $.product.Item.Name }}</h1>
+            <p class="product-detail-price">{{ renderMoney $.product.Price }}</p>
+            <p class="product-detail-desc">{{ $.product.Item.Description }}</p>
+
+            {{ if $.packagingInfo }}
+            <div class="product-detail-specs">
+              <h5>Specifications</h5>
+              <div class="specs-grid">
+                <div class="spec-item">
+                  <i class="fas fa-weight-hanging"></i>
+                  <span>{{ if $.packagingInfo.Weight }}{{ $.packagingInfo.Weight }}lb{{ else }}N/A{{ end }}</span>
+                </div>
+                <div class="spec-item">
+                  <i class="fas fa-arrows-alt-h"></i>
+                  <span>{{ if $.packagingInfo.Width }}{{ $.packagingInfo.Width }}cm{{ else }}N/A{{ end }}</span>
+                </div>
+                <div class="spec-item">
+                  <i class="fas fa-arrows-alt-v"></i>
+                  <span>{{ if $.packagingInfo.Height }}{{ $.packagingInfo.Height }}cm{{ else }}N/A{{ end }}</span>
+                </div>
+                <div class="spec-item">
+                  <i class="fas fa-cube"></i>
+                  <span>{{ if $.packagingInfo.Depth }}{{ $.packagingInfo.Depth }}cm{{ else }}N/A{{ end }}</span>
+                </div>
+              </div>
+            </div>
+            {{ end }}
+
+            <form method="POST" action="{{ $.baseUrl }}/cart" class="product-detail-form">
+              <input type="hidden" name="product_id" value="{{$.product.Item.Id}}" />
+              <div class="d-flex align-items-center" style="gap: 20px;">
+                <div class="product-qty-counter">
+                  <label>Quantity</label>
+                  <div class="qty-controls">
+                    <button type="button" class="qty-btn qty-minus" onclick="changeQty(-1)">−</button>
+                    <input type="number" name="quantity" id="quantity" value="1" min="1" max="99" readonly class="qty-input" />
+                    <button type="button" class="qty-btn qty-plus" onclick="changeQty(1)">+</button>
+                  </div>
+                </div>
+                <button type="submit" class="btn-add-to-cart">
+                  <i class="fas fa-shopping-bag" style="margin-right: 8px;"></i> Add To Cart
+                </button>
+              </div>
+            </form>
+            <script>
+              function changeQty(delta) {
+                var input = document.getElementById('quantity');
+                var val = parseInt(input.value) + delta;
+                if (val < 1) val = 1;
+                if (val > 99) val = 99;
+                input.value = val;
+              }
+            </script>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div>
+    {{ if $.recommendations}}
+      {{ template "recommendations" $ }}
+    {{ end }}
+  </div>
+  <div class="ad">
+   {{ if $.ad }}{{ template "text_ad" $ }}{{ end }}
+  </div>
+
+</main>
+{{ template "footer" . }}
+{{ end }}

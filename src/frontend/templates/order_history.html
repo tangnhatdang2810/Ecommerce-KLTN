@@ -1,0 +1,86 @@
+{{ define "order_history" }}
+
+{{ template "header" . }}
+
+<main role="main" class="cart-sections">
+    <section class="container">
+        <div class="row">
+            <div class="col-12 col-lg-10 offset-lg-1">
+
+                <div class="row mb-3 py-2">
+                    <div class="col-8 pl-md-0">
+                        <h3>Order History</h3>
+                    </div>
+                    <div class="col-4 pr-md-0 text-right">
+                        <a class="cymbal-button-primary" href="{{ $.baseUrl }}/" role="button">
+                            Continue Shopping
+                        </a>
+                    </div>
+                </div>
+
+                {{ if not $.orders }}
+                <div class="row">
+                    <div class="col-12 text-center py-5">
+                        <h4>You have no orders yet.</h4>
+                        <p>Start shopping and your order history will appear here.</p>
+                    </div>
+                </div>
+                {{ else }}
+
+                {{ range $.orders }}
+                <div class="card mb-4">
+                    <div class="card-header" style="background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); color: white;">
+                        <div class="row">
+                            <div class="col-md-4">
+                                <strong>Order #</strong> {{ .OrderId | printf "%.8s" }}...
+                            </div>
+                            <div class="col-md-4 text-center">
+                                <strong>Tracking #</strong> {{ .ShippingTrackingId | printf "%.8s" }}...
+                            </div>
+                            <div class="col-md-4 text-right">
+                                <strong>Date:</strong> {{ .CreatedAt | printf "%.10s" }}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <table class="table table-sm mb-2">
+                            <thead>
+                                <tr>
+                                    <th style="width:50%">Product</th>
+                                    <th style="width:25%" class="text-center">Quantity</th>
+                                    <th style="width:25%" class="text-right">Price</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {{ range .Items }}
+                                <tr>
+                                    <td>
+                                        <a href="{{ $.baseUrl }}/product/{{ .ProductId }}">{{ .ProductName }}</a>
+                                    </td>
+                                    <td class="text-center">{{ .Quantity }}</td>
+                                    <td class="text-right">{{ renderMoney .Cost }}</td>
+                                </tr>
+                                {{ end }}
+                            </tbody>
+                        </table>
+                        <div class="row border-top pt-2">
+                            <div class="col-6">
+                                <small class="text-muted">Shipping Cost: {{ renderMoney .ShippingCost }}</small>
+                            </div>
+                            <div class="col-6 text-right">
+                                <strong>Total: {{ renderMoney .TotalCost }}</strong>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {{ end }}
+
+                {{ end }}
+
+            </div>
+        </div>
+    </section>
+</main>
+
+{{ template "footer" . }}
+{{ end }}

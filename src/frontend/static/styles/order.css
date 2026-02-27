@@ -1,0 +1,44 @@
+/**
+ * Order page styles
+ */
+
+.order {
+    background: var(--bg-light, #fafafa);
+}
+
+.order-complete-section {
+    max-width: 520px;
+    padding-top: 56px;
+    padding-bottom: 120px;
+}
+
+.order-complete-section h3 {
+    margin: 0;
+    font-family: 'Playfair Display', serif;
+    font-size: 34px;
+    font-weight: 700;
+    color: var(--dark, #1a1a2e);
+}
+
+.order-complete-section p {
+    margin-top: 8px;
+    color: var(--text-secondary, #5c5c6d);
+}
+
+.order-complete-section .padding-y-24 {
+    padding-bottom: 24px;
+    padding-top: 24px;
+}
+
+.order-complete-section .border-bottom-solid {
+    border-bottom: 1px solid var(--border, #e8e8ed);
+}
+
+.order-complete-section .cymbal-button-primary {
+    margin-top: 24px;
+}
+
+.order-complete-section a.cymbal-button-primary:hover {
+    text-decoration: none;
+    color: white;
+}

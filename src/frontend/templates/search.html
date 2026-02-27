@@ -1,0 +1,63 @@
+{{ define "search" }}
+
+{{ template "header" . }}
+
+<main role="main">
+  <section class="search-results-section">
+    <div class="container">
+      <a href="{{ $.baseUrl }}/" class="btn-back-home">
+        <i class="fas fa-arrow-left"></i> Continue Shopping
+      </a>
+
+      <div class="search-results-header">
+        {{ if $.query }}
+        <h2>Search results for "<span class="search-query-text">{{ $.query }}</span>"</h2>
+        <p class="search-results-count">{{ $.result_count }} product{{ if ne $.result_count 1 }}s{{ end }} found</p>
+        {{ else }}
+        <h2>Search Products</h2>
+        <p class="search-results-count">Enter a keyword to search for products</p>
+        {{ end }}
+      </div>
+
+      {{ if and $.query (eq $.result_count 0) }}
+      <div class="search-no-results">
+        <i class="fas fa-search fa-3x"></i>
+        <h3>No products found</h3>
+        <p>Try searching with different keywords</p>
+        <a href="{{ $.baseUrl }}/" class="btn-back-home">
+          <i class="fas fa-arrow-left"></i> Back to Shopping
+        </a>
+      </div>
+      {{ end }}
+
+      {{ if $.products }}
+      <div class="row products-grid">
+        {{ range $.products }}
+        <div class="col-lg-4 col-md-6 mb-4">
+          <div class="product-card">
+            <a href="{{ $.baseUrl }}/product/{{.Item.Id}}" class="product-card-link">
+              <div class="product-card-img-wrapper">
+                <img loading="lazy" src="{{ $.baseUrl }}{{.Item.Picture}}" alt="{{ .Item.Name }}">
+                <div class="product-card-overlay">
+                  <span class="quick-view">Quick View</span>
+                </div>
+              </div>
+            </a>
+            <div class="product-card-body">
+              <h3 class="product-card-name">
+                <a href="{{ $.baseUrl }}/product/{{.Item.Id}}">{{ .Item.Name }}</a>
+              </h3>
+              <div class="product-card-price">{{ renderMoney .Price }}</div>
+            </div>
+          </div>
+        </div>
+        {{ end }}
+      </div>
+      {{ end }}
+    </div>
+  </section>
+</main>
+
+{{ template "footer" . }}
+
+{{ end }}

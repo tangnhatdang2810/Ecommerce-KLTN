@@ -1,0 +1,173 @@
+# Copyright 2024 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# ---------- MySQL for AuthService ----------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mysql-auth
+  labels:
+    app: mysql-auth
+spec:
+  selector:
+    matchLabels:
+      app: mysql-auth
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: mysql-auth
+    spec:
+      containers:
+        - name: mysql
+          image: mysql:8.0
+          ports:
+          - containerPort: 3306
+          env:
+          - name: MYSQL_ROOT_PASSWORD
+            value: "rootpassword"
+          - name: MYSQL_USER
+            value: "authuser"
+          - name: MYSQL_PASSWORD
+            value: "authpassword"
+          - name: MYSQL_DATABASE
+            value: "authdb"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          volumeMounts:
+          - name: mysql-data
+            mountPath: /var/lib/mysql
+          readinessProbe:
+            tcpSocket:
+              port: 3306
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: 3306
+            initialDelaySeconds: 30
+            periodSeconds: 10
+      volumes:
+      - name: mysql-data
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql-auth
+  labels:
+    app: mysql-auth
+spec:
+  type: ClusterIP
+  selector:
+    app: mysql-auth
+  ports:
+  - port: 3306
+    targetPort: 3306
+
+# ---------- AuthService ----------
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: authservice
+  labels:
+    app: authservice
+spec:
+  selector:
+    matchLabels:
+      app: authservice
+  template:
+    metadata:
+      labels:
+        app: authservice
+      annotations:
+        sidecar.istio.io/rewriteAppHTTPProbers: "true"
+    spec:
+      serviceAccountName: authservice
+      securityContext:
+        fsGroup: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+      containers:
+        - name: server
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            privileged: false
+            readOnlyRootFilesystem: true
+          image: authservice
+          ports:
+          - containerPort: 8080
+          readinessProbe:
+            initialDelaySeconds: 20
+            httpGet:
+              path: "/_healthz"
+              port: 8080
+          livenessProbe:
+            initialDelaySeconds: 20
+            httpGet:
+              path: "/_healthz"
+              port: 8080
+          env:
+          - name: PORT
+            value: "8080"
+          - name: MYSQL_HOST
+            value: "mysql-auth"
+          - name: MYSQL_PORT
+            value: "3306"
+          - name: MYSQL_USER
+            value: "authuser"
+          - name: MYSQL_PASSWORD
+            value: "authpassword"
+          - name: MYSQL_DATABASE
+            value: "authdb"
+          - name: JWT_SECRET
+            value: "online-boutique-jwt-secret"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: authservice
+  labels:
+    app: authservice
+spec:
+  type: ClusterIP
+  selector:
+    app: authservice
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8080
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: authservice

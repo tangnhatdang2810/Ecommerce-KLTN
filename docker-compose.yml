@@ -1,0 +1,239 @@
+version: "3.9"
+
+services:
+  # ——————————————————————————————————————————
+  # Databases
+  # ——————————————————————————————————————————
+  mysql-auth:
+    image: mysql:8.0
+    container_name: mysql-auth
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_USER: authuser
+      MYSQL_PASSWORD: authpassword
+      MYSQL_DATABASE: authdb
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql-auth-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-prootpassword"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  mysql-payment:
+    image: mysql:8.0
+    container_name: mysql-payment
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_USER: paymentuser
+      MYSQL_PASSWORD: paymentpassword
+      MYSQL_DATABASE: paymentdb
+    ports:
+      - "3308:3306"
+    volumes:
+      - mysql-payment-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-prootpassword"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  mongo-productcatalog:
+    image: mongo:7.0
+    container_name: mongo-productcatalog
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-productcatalog-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  mongo-shipping:
+    image: mongo:7.0
+    container_name: mongo-shipping
+    ports:
+      - "27018:27017"
+    volumes:
+      - mongo-shipping-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  mongo-checkout:
+    image: mongo:7.0
+    container_name: mongo-checkout
+    ports:
+      - "27019:27017"
+    volumes:
+      - mongo-checkout-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  redis-cart:
+    image: redis:alpine
+    container_name: redis-cart
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-cart-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ——————————————————————————————————————————
+  # Backend Services
+  # ——————————————————————————————————————————
+  authservice:
+    build:
+      context: ./src/authservice
+    container_name: authservice
+    ports:
+      - "8081:8080"
+    environment:
+      PORT: "8080"
+      MYSQL_HOST: mysql-auth
+      MYSQL_PORT: "3306"
+      MYSQL_USER: authuser
+      MYSQL_PASSWORD: authpassword
+      MYSQL_DATABASE: authdb
+      JWT_SECRET: online-boutique-jwt-secret
+    depends_on:
+      mysql-auth:
+        condition: service_healthy
+    restart: on-failure
+
+  cartservice:
+    build:
+      context: ./src/cartservice
+    container_name: cartservice
+    ports:
+      - "7070:7070"
+    environment:
+      PORT: "7070"
+      REDIS_ADDR: "redis-cart:6379"
+    depends_on:
+      redis-cart:
+        condition: service_healthy
+    restart: on-failure
+
+  productcatalogservice:
+    build:
+      context: ./src/productcatalogservice
+    container_name: productcatalogservice
+    ports:
+      - "3550:3550"
+    environment:
+      PORT: "3550"
+      MONGO_ADDR: "mongodb://mongo-productcatalog:27017"
+    depends_on:
+      mongo-productcatalog:
+        condition: service_healthy
+    restart: on-failure
+
+  paymentservice:
+    build:
+      context: ./src/paymentservice
+    container_name: paymentservice
+    ports:
+      - "50051:50051"
+    environment:
+      PORT: "50051"
+      MYSQL_HOST: mysql-payment
+      MYSQL_PORT: "3306"
+      MYSQL_USER: paymentuser
+      MYSQL_PASSWORD: paymentpassword
+      MYSQL_DATABASE: paymentdb
+    depends_on:
+      mysql-payment:
+        condition: service_healthy
+    restart: on-failure
+
+  shippingservice:
+    build:
+      context: ./src/shippingservice
+    container_name: shippingservice
+    ports:
+      - "50052:50051"
+    environment:
+      PORT: "50051"
+      MONGO_ADDR: "mongodb://mongo-shipping:27017"
+    depends_on:
+      mongo-shipping:
+        condition: service_healthy
+    restart: on-failure
+
+  checkoutservice:
+    build:
+      context: ./src/checkoutservice
+    container_name: checkoutservice
+    ports:
+      - "5050:5050"
+    environment:
+      PORT: "5050"
+      PRODUCT_CATALOG_SERVICE_ADDR: "productcatalogservice:3550"
+      SHIPPING_SERVICE_ADDR: "shippingservice:50051"
+      PAYMENT_SERVICE_ADDR: "paymentservice:50051"
+      CART_SERVICE_ADDR: "cartservice:7070"
+      MONGO_ADDR: "mongodb://mongo-checkout:27017"
+    depends_on:
+      mongo-checkout:
+        condition: service_healthy
+      cartservice:
+        condition: service_started
+      productcatalogservice:
+        condition: service_started
+      paymentservice:
+        condition: service_started
+      shippingservice:
+        condition: service_started
+    restart: on-failure
+
+  # ——————————————————————————————————————————
+  # Frontend
+  # ——————————————————————————————————————————
+  frontend:
+    build:
+      context: ./src/frontend
+    container_name: frontend
+    ports:
+      - "8080:8080"
+    environment:
+      PORT: "8080"
+      PRODUCT_CATALOG_SERVICE_ADDR: "productcatalogservice:3550"
+      CART_SERVICE_ADDR: "cartservice:7070"
+      SHIPPING_SERVICE_ADDR: "shippingservice:50051"
+      CHECKOUT_SERVICE_ADDR: "checkoutservice:5050"
+      AUTH_SERVICE_ADDR: "authservice:8080"
+      ENABLE_PROFILER: "0"
+    depends_on:
+      - authservice
+      - cartservice
+      - productcatalogservice
+      - checkoutservice
+      - shippingservice
+    restart: on-failure
+
+volumes:
+  mysql-auth-data:
+  mysql-payment-data:
+  mongo-productcatalog-data:
+  mongo-shipping-data:
+  mongo-checkout-data:
+  redis-cart-data:
