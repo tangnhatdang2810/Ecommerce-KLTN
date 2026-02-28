@@ -2,9 +2,11 @@ pipeline {
     agent { label 'agent-1' }
 
     environment {
-        DOCKER_REGISTRY = "tangnhatdang"
+        DOCKER_REGISTRY  = "tangnhatdang"
         IMAGE_PREFIX     = "ecommerce-kltn"
         SONAR_HOME       = "/opt/sonar-scanner"
+
+        TRIVY_CACHE_DIR  = "/opt/trivy-cache"
     }
 
     stages {
@@ -124,6 +126,7 @@ pipeline {
                             // Trivy Image Scan (log only, không block pipeline)
                             sh """
                             trivy image \
+                              --cache-dir $TRIVY_CACHE_DIR \
                               --severity CRITICAL,HIGH \
                               --exit-code 0 \
                               --format table \
@@ -208,6 +211,15 @@ pipeline {
     post {
         always {
             archiveArtifacts artifacts: '**/*.html', allowEmptyArchive: true, fingerprint: true
+
+            sh '''
+            echo "Cleaning docker unused resources..."
+            docker system prune -af || true
+
+            echo "Cleaning workspace temp files..."
+            rm -rf $WORKSPACE/tmp || true
+            '''
+
             sh 'docker-compose down || true'
         }
     }
