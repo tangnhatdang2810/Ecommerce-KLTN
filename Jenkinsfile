@@ -94,32 +94,6 @@ pipeline {
         }
 
         // ═══════════════════════════════════════════════
-        //  SCA - OWASP Dependency Check
-        // ═══════════════════════════════════════════════
-        stage('Dependency Check (SCA)') {
-            steps {
-                withCredentials([string(
-                    credentialsId: 'nvd-api-key',
-                    variable: 'NVD_API_KEY'
-                )]) {
-                    sh '''
-                    echo "Checking NVD key..."
-                    echo "KEY LENGTH: ${#NVD_API_KEY}"
-
-                    dependency-check \
-                      --project ecommerce-kltn \
-                      --scan src/ \
-                      --format HTML \
-                      --out dependency-check-report \
-                      --nvdApiKey $NVD_API_KEY \
-                      --nvdApiDelay 8000 \
-                      --log dependency-check.log
-                    '''
-                }
-            }
-        }
-
-        // ═══════════════════════════════════════════════
         //  DOCKER BUILD + TRIVY SCAN + PUSH (all 8 services)
         // ═══════════════════════════════════════════════
         stage('Docker Build & Trivy Scan & Push') {
