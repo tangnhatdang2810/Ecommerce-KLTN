@@ -103,12 +103,17 @@ pipeline {
                     variable: 'NVD_API_KEY'
                 )]) {
                     sh '''
+                    echo "Checking NVD key..."
+                    echo "KEY LENGTH: ${#NVD_API_KEY}"
+
                     dependency-check \
                       --project ecommerce-kltn \
                       --scan src/ \
                       --format HTML \
                       --out dependency-check-report \
-                      --nvdApiKey $NVD_API_KEY
+                      --nvdApiKey $NVD_API_KEY \
+                      --nvdApiDelay 8000 \
+                      --log dependency-check.log
                     '''
                 }
             }
