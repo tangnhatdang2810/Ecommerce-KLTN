@@ -23,7 +23,7 @@ pipeline {
         }
 
         // ═══════════════════════════════════════════════
-        //  UNIT TEST - Java Services (Maven)
+        //  UNIT TEST - Java Services (Maven) - Parallel
         // ═══════════════════════════════════════════════
         stage('Unit Test - Java Services') {
             steps {
@@ -33,17 +33,22 @@ pipeline {
                         'paymentservice', 'productcatalogservice',
                         'shippingservice', 'apigateway'
                     ]
+                    def testStages = [:]
                     for (svc in javaServices) {
-                        dir("src/${svc}") {
-                            sh "mvn test -B"
+                        def serviceName = svc
+                        testStages["Test ${serviceName}"] = {
+                            dir("src/${serviceName}") {
+                                sh "mvn test -B"
+                            }
                         }
                     }
+                    parallel testStages
                 }
             }
         }
 
         // ═══════════════════════════════════════════════
-        //  BUILD - Java Services (Maven)
+        //  BUILD - Java Services (Maven) - Parallel
         // ═══════════════════════════════════════════════
         stage('Build Package - Java Services') {
             steps {
@@ -53,11 +58,16 @@ pipeline {
                         'paymentservice', 'productcatalogservice',
                         'shippingservice', 'apigateway'
                     ]
+                    def buildStages = [:]
                     for (svc in javaServices) {
-                        dir("src/${svc}") {
-                            sh "mvn clean package -DskipTests -B"
+                        def serviceName = svc
+                        buildStages["Build ${serviceName}"] = {
+                            dir("src/${serviceName}") {
+                                sh "mvn clean package -DskipTests -B"
+                            }
                         }
                     }
+                    parallel buildStages
                 }
             }
         }
@@ -115,28 +125,33 @@ pipeline {
                     )]) {
                         sh 'echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin'
 
+                        def dockerStages = [:]
                         for (svc in allServices) {
-                            def imageName = "${DOCKER_REGISTRY}/${IMAGE_PREFIX}-${svc}"
+                            def serviceName = svc
+                            def imageName = "${DOCKER_REGISTRY}/${IMAGE_PREFIX}-${serviceName}"
                             def imageTag  = "${env.GIT_COMMIT_SHORT}"
 
-                            // Docker Build
-                            dir("src/${svc}") {
-                                sh "docker build -t ${imageName}:${imageTag} -t ${imageName}:latest ."
+                            dockerStages["Docker ${serviceName}"] = {
+                                // Docker Build
+                                dir("src/${serviceName}") {
+                                    sh "docker build -t ${imageName}:${imageTag} -t ${imageName}:latest ."
+                                }
+
+                                // Trivy Image Scan
+                                sh """
+                                trivy image \
+                                  --cache-dir \$TRIVY_CACHE_DIR \
+                                  ${imageName}:${imageTag}
+                                """
+
+                                // Push to DockerHub
+                                sh """
+                                docker push ${imageName}:${imageTag}
+                                docker push ${imageName}:latest
+                                """
                             }
-
-                            // Trivy Image Scan
-                            sh """
-                            trivy image \
-                              --cache-dir \$TRIVY_CACHE_DIR \
-                              ${imageName}:${imageTag}
-                            """
-
-                            // Push to DockerHub
-                            sh """
-                            docker push ${imageName}:${imageTag}
-                            docker push ${imageName}:latest
-                            """
                         }
+                        parallel dockerStages
                     }
                 }
             }
