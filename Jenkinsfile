@@ -12,84 +12,94 @@ pipeline {
 
     stages {
 
+    // =================================================
+    // CHECKOUT
+    // =================================================
         stage('Checkout') {
             steps {
                 git branch: 'main',
                     url: 'https://github.com/tangnhatdang2810/Ecommerce-KLTN.git'
+
                 script {
-                    env.GIT_COMMIT_SHORT = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
+                    env.GIT_COMMIT_SHORT =
+                        sh(script: "git rev-parse --short HEAD",
+                           returnStdout: true).trim()
                 }
             }
         }
 
-        // ═══════════════════════════════════════════════
-        //  UNIT TEST - Java Services (Maven) - Parallel
-        // ═══════════════════════════════════════════════
+    // =================================================
+    // UNIT TEST (PARALLEL)
+    // =================================================
         stage('Unit Test - Java Services') {
             steps {
                 script {
-                    def javaServices = [
-                        'authservice', 'cartservice', 'checkoutservice',
-                        'paymentservice', 'productcatalogservice',
-                        'shippingservice', 'apigateway'
+                    def services = [
+                        'authservice','cartservice','checkoutservice',
+                        'paymentservice','productcatalogservice',
+                        'shippingservice','apigateway'
                     ]
-                    def testStages = [:]
-                    for (svc in javaServices) {
-                        def serviceName = svc
-                        testStages["Test ${serviceName}"] = {
-                            dir("src/${serviceName}") {
+
+                    def jobs = [:]
+
+                    for (svc in services) {
+                        def s = svc
+                        jobs["Test ${s}"] = {
+                            dir("src/${s}") {
                                 sh "mvn test -B"
                             }
                         }
                     }
-                    parallel testStages
+                    parallel jobs
                 }
             }
         }
 
-        // ═══════════════════════════════════════════════
-        //  BUILD - Java Services (Maven) - Parallel
-        // ═══════════════════════════════════════════════
-        stage('Build Package - Java Services') {
+    // =================================================
+    // BUILD PACKAGE (PARALLEL)
+    // =================================================
+        stage('Build Package') {
             steps {
                 script {
-                    def javaServices = [
-                        'authservice', 'cartservice', 'checkoutservice',
-                        'paymentservice', 'productcatalogservice',
-                        'shippingservice', 'apigateway'
+                    def services = [
+                        'authservice','cartservice','checkoutservice',
+                        'paymentservice','productcatalogservice',
+                        'shippingservice','apigateway'
                     ]
-                    def buildStages = [:]
-                    for (svc in javaServices) {
-                        def serviceName = svc
-                        buildStages["Build ${serviceName}"] = {
-                            dir("src/${serviceName}") {
+
+                    def jobs = [:]
+
+                    for (svc in services) {
+                        def s = svc
+                        jobs["Build ${s}"] = {
+                            dir("src/${s}") {
                                 sh "mvn clean package -DskipTests -B"
                             }
                         }
                     }
-                    parallel buildStages
+                    parallel jobs
                 }
             }
         }
 
-        // ═══════════════════════════════════════════════
-        //  SAST - SonarQube (từng service riêng project)
-        // ═══════════════════════════════════════════════
-        stage('SonarQube Scan (SAST)') {
+    // =================================================
+    // SONARQUBE (SAST)
+    // =================================================
+        stage('SonarQube Scan') {
             steps {
                 script {
-                    def javaServices = [
-                        'authservice', 'cartservice', 'checkoutservice',
-                        'paymentservice', 'productcatalogservice',
-                        'shippingservice', 'apigateway'
+                    def services = [
+                        'authservice','cartservice','checkoutservice',
+                        'paymentservice','productcatalogservice',
+                        'shippingservice','apigateway'
                     ]
+
                     withSonarQubeEnv('sonarqube-server') {
-                        for (svc in javaServices) {
+                        for (svc in services) {
                             dir("src/${svc}") {
                                 sh """
                                 mvn sonar:sonar \
-                                  -Dsonar.projectKey=ecommerce-kltn-${svc} \
-                                  -Dsonar.projectName=ecommerce-kltn-${svc}
+                                  -Dsonar.projectKey=ecommerce-kltn-${svc}
                                 """
                             }
                         }
@@ -106,45 +116,46 @@ pipeline {
             }
         }
 
-        // ═══════════════════════════════════════════════
-        //  DOCKER BUILD + TRIVY SCAN + PUSH (all 8 services)
-        // ═══════════════════════════════════════════════
-        stage('Docker Build & Trivy Scan & Push') {
+    // =================================================
+    // OWASP DEPENDENCY CHECK (SCA)
+    // =================================================
+        stage('OWASP Dependency Check') {
+            steps {
+
+                dependencyCheck additionalArguments: '''
+                    --scan ./src
+                    --format XML
+                    --format HTML
+                    --out dependency-check-report
+                ''',
+                odcInstallation: 'dependency-check'
+
+                dependencyCheckPublisher pattern:
+                    'dependency-check-report/dependency-check-report.xml'
+            }
+        }
+
+    // =================================================
+    // DOCKER BUILD
+    // =================================================
+        stage('Docker Build Images') {
             steps {
                 script {
-                    def allServices = [
-                        'authservice', 'cartservice', 'checkoutservice',
-                        'paymentservice', 'productcatalogservice',
-                        'shippingservice', 'apigateway', 'frontend'
+                    def services = [
+                        'authservice','cartservice','checkoutservice',
+                        'paymentservice','productcatalogservice',
+                        'shippingservice','apigateway','frontend'
                     ]
 
-                    withCredentials([usernamePassword(
-                        credentialsId: 'dockerhub-creds',
-                        usernameVariable: 'DOCKER_USER',
-                        passwordVariable: 'DOCKER_PASS'
-                    )]) {
-                        sh 'echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin'
+                    for (svc in services) {
+                        def image =
+                          "${DOCKER_REGISTRY}/${IMAGE_PREFIX}-${svc}"
 
-                        for (svc in allServices) {
-                            def imageName = "${DOCKER_REGISTRY}/${IMAGE_PREFIX}-${svc}"
-                            def imageTag  = "${env.GIT_COMMIT_SHORT}"
-
-                            // Docker Build
-                            dir("src/${svc}") {
-                                sh "docker build -t ${imageName}:${imageTag} -t ${imageName}:latest ."
-                            }
-
-                            // Trivy Image Scan
+                        dir("src/${svc}") {
                             sh """
-                            trivy image \
-                              --cache-dir \$TRIVY_CACHE_DIR \
-                              ${imageName}:${imageTag}
-                            """
-
-                            // Push to DockerHub
-                            sh """
-                            docker push ${imageName}:${imageTag}
-                            docker push ${imageName}:latest
+                            docker build \
+                              -t ${image}:${env.GIT_COMMIT_SHORT} \
+                              -t ${image}:latest .
                             """
                         }
                     }
@@ -152,20 +163,92 @@ pipeline {
             }
         }
 
-        // ═══════════════════════════════════════════════
-        //  DAST - OWASP ZAP (chạy app bằng docker-compose)
-        // ═══════════════════════════════════════════════
+    // =================================================
+    // TRIVY SCAN (PARALLEL + OPTIMIZED)
+    // =================================================
+        stage('Trivy Scan Docker Images') {
+            steps {
+                script {
+
+                    def services = [
+                        'authservice','cartservice','checkoutservice',
+                        'paymentservice','productcatalogservice',
+                        'shippingservice','apigateway','frontend'
+                    ]
+
+                    def scans = [:]
+
+                    for (svc in services) {
+                        def s = svc
+                        scans["Scan ${s}"] = {
+
+                            def image =
+                              "${DOCKER_REGISTRY}/${IMAGE_PREFIX}-${s}:${env.GIT_COMMIT_SHORT}"
+
+                            sh """
+                            trivy image \
+                              --cache-dir \$TRIVY_CACHE_DIR \
+                              --skip-db-update \
+                              --skip-java-db-update \
+                              --severity HIGH,CRITICAL \
+                              --exit-code 0 \
+                              --format table \
+                              ${image}
+                            """
+                        }
+                    }
+
+                    parallel scans
+                }
+            }
+        }
+
+    // =================================================
+    // PUSH DOCKER IMAGES
+    // =================================================
+        stage('Push Images') {
+            steps {
+                script {
+
+                    def services = [
+                        'authservice','cartservice','checkoutservice',
+                        'paymentservice','productcatalogservice',
+                        'shippingservice','apigateway','frontend'
+                    ]
+
+                    withCredentials([usernamePassword(
+                        credentialsId: 'dockerhub-creds',
+                        usernameVariable: 'DOCKER_USER',
+                        passwordVariable: 'DOCKER_PASS'
+                    )]) {
+
+                        sh 'echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin'
+
+                        for (svc in services) {
+                            def image =
+                              "${DOCKER_REGISTRY}/${IMAGE_PREFIX}-${svc}"
+
+                            sh """
+                            docker push ${image}:${env.GIT_COMMIT_SHORT}
+                            docker push ${image}:latest
+                            """
+                        }
+                    }
+                }
+            }
+        }
+
+    // =================================================
+    // DAST - OWASP ZAP
+    // =================================================
         stage('DAST - OWASP ZAP') {
             steps {
                 sh '''
-                # Start toàn bộ services bằng docker-compose
-                docker-compose up -d
+                docker compose up -d
 
-                # Đợi app sẵn sàng (frontend ở port 8080)
-                echo "Waiting for application to start..."
+                echo "Waiting application..."
                 sleep 30
 
-                # ZAP baseline scan qua host network
                 docker run --rm \
                   --network host \
                   -v $(pwd):/zap/wrk \
@@ -174,48 +257,15 @@ pipeline {
                   -t http://localhost:8080 \
                   -r zap-report.html || true
 
-                # Dọn dẹp
-                docker-compose down
+                docker compose down
                 '''
             }
         }
-
-        // ═══════════════════════════════════════════════
-        //  UPDATE K8S MANIFESTS (cho CD - ArgoCD sau này)
-        //  Uncomment khi sẵn sàng làm CD
-        // ═══════════════════════════════════════════════
-        // stage('Update K8s Manifests & Push to Git') {
-        //     steps {
-        //         script {
-        //             def allServices = [
-        //                 'authservice', 'cartservice', 'checkoutservice',
-        //                 'paymentservice', 'productcatalogservice',
-        //                 'shippingservice', 'apigateway', 'frontend'
-        //             ]
-        //             for (svc in allServices) {
-        //                 sh """
-        //                 sed -i 's|image: .*${svc}.*|image: ${DOCKER_REGISTRY}/${IMAGE_PREFIX}-${svc}:${env.GIT_COMMIT_SHORT}|' \
-        //                   kubernetes-manifests/${svc}.yaml
-        //                 """
-        //             }
-        //             withCredentials([usernamePassword(
-        //                 credentialsId: 'github-creds',
-        //                 usernameVariable: 'GIT_USER',
-        //                 passwordVariable: 'GIT_PASS'
-        //             )]) {
-        //                 sh '''
-        //                 git config user.email "jenkins@ci.local"
-        //                 git config user.name "Jenkins CI"
-        //                 git add kubernetes-manifests/
-        //                 git commit -m "ci: update image tags to ${GIT_COMMIT_SHORT}" || true
-        //                 git push https://${GIT_USER}:${GIT_PASS}@github.com/tangnhatdang2810/Ecommerce-KLTN.git main
-        //                 '''
-        //             }
-        //         }
-        //     }
-        // }
     }
 
+    // =================================================
+    // CLEANUP
+    // =================================================
     post {
         always {
             sh '''
@@ -227,7 +277,8 @@ pipeline {
             rm -rf /tmp/trivy-* || true
             '''
 
-            archiveArtifacts artifacts: '**/*.html', allowEmptyArchive: true
+            archiveArtifacts artifacts: '**/*.html',
+                              allowEmptyArchive: true
         }
     }
 }
