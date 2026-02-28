@@ -125,33 +125,28 @@ pipeline {
                     )]) {
                         sh 'echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin'
 
-                        def dockerStages = [:]
                         for (svc in allServices) {
-                            def serviceName = svc
-                            def imageName = "${DOCKER_REGISTRY}/${IMAGE_PREFIX}-${serviceName}"
+                            def imageName = "${DOCKER_REGISTRY}/${IMAGE_PREFIX}-${svc}"
                             def imageTag  = "${env.GIT_COMMIT_SHORT}"
 
-                            dockerStages["Docker ${serviceName}"] = {
-                                // Docker Build
-                                dir("src/${serviceName}") {
-                                    sh "docker build -t ${imageName}:${imageTag} -t ${imageName}:latest ."
-                                }
-
-                                // Trivy Image Scan
-                                sh """
-                                trivy image \
-                                  --cache-dir \$TRIVY_CACHE_DIR \
-                                  ${imageName}:${imageTag}
-                                """
-
-                                // Push to DockerHub
-                                sh """
-                                docker push ${imageName}:${imageTag}
-                                docker push ${imageName}:latest
-                                """
+                            // Docker Build
+                            dir("src/${svc}") {
+                                sh "docker build -t ${imageName}:${imageTag} -t ${imageName}:latest ."
                             }
+
+                            // Trivy Image Scan
+                            sh """
+                            trivy image \
+                              --cache-dir \$TRIVY_CACHE_DIR \
+                              ${imageName}:${imageTag}
+                            """
+
+                            // Push to DockerHub
+                            sh """
+                            docker push ${imageName}:${imageTag}
+                            docker push ${imageName}:latest
+                            """
                         }
-                        parallel dockerStages
                     }
                 }
             }
