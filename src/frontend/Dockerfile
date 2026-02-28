@@ -23,7 +23,7 @@ RUN go mod tidy
 
 RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o /go/bin/frontend .
 
-FROM gcr.io/distroless/static
+FROM alpine:3.19
 WORKDIR /src
 COPY --from=builder /go/bin/frontend /src/server
 COPY ./templates ./templates
