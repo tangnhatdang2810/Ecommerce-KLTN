@@ -98,13 +98,19 @@ pipeline {
         // ═══════════════════════════════════════════════
         stage('Dependency Check (SCA)') {
             steps {
-                sh '''
-                dependency-check \
-                  --project ecommerce-kltn \
-                  --scan src/ \
-                  --format HTML \
-                  --out dependency-check-report
-                '''
+                withCredentials([string(
+                    credentialsId: 'nvd-api-key',
+                    variable: 'NVD_API_KEY'
+                )]) {
+                    sh '''
+                    dependency-check \
+                      --project ecommerce-kltn \
+                      --scan src/ \
+                      --format HTML \
+                      --out dependency-check-report \
+                      --nvdApiKey $NVD_API_KEY
+                    '''
+                }
             }
         }
 
