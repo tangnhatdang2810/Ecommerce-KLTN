@@ -7,6 +7,7 @@ pipeline {
         SONAR_HOME       = "/opt/sonar-scanner"
 
         TRIVY_CACHE_DIR  = "/opt/trivy-cache"
+        TMPDIR           = "/opt/tmp"
     }
 
     stages {
@@ -123,13 +124,10 @@ pipeline {
                                 sh "docker build -t ${imageName}:${imageTag} -t ${imageName}:latest ."
                             }
 
-                            // Trivy Image Scan (log only, không block pipeline)
+                            // Trivy Image Scan
                             sh """
                             trivy image \
-                              --cache-dir $TRIVY_CACHE_DIR \
-                              --severity CRITICAL,HIGH \
-                              --exit-code 0 \
-                              --format table \
+                              --cache-dir \$TRIVY_CACHE_DIR \
                               ${imageName}:${imageTag}
                             """
 
@@ -210,17 +208,16 @@ pipeline {
 
     post {
         always {
-            archiveArtifacts artifacts: '**/*.html', allowEmptyArchive: true, fingerprint: true
-
             sh '''
-            echo "Cleaning docker unused resources..."
+            echo "===== CLEAN DOCKER ====="
             docker system prune -af || true
+            docker builder prune -af || true
 
-            echo "Cleaning workspace temp files..."
-            rm -rf $WORKSPACE/tmp || true
+            echo "===== CLEAN TMP ====="
+            rm -rf /tmp/trivy-* || true
             '''
 
-            sh 'docker-compose down || true'
+            archiveArtifacts artifacts: '**/*.html', allowEmptyArchive: true
         }
     }
 }
