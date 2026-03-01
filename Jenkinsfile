@@ -165,21 +165,20 @@ pipeline {
                         'shippingservice','apigateway','frontend'
                     ]
 
-                    def jobs = [:]
+                    def builds = [:]
 
                     services.each { svc ->
 
                         def s = svc
 
-                        jobs["Build ${s}"] = {
+                        builds["Build ${s}"] = {
 
                             def image =
                                 "${DOCKER_REGISTRY}/${IMAGE_PREFIX}-${s}"
 
                             dir("src/${s}") {
-
                                 sh """
-                                DOCKER_BUILDKIT=1 docker build \
+                                docker build \
                                 -t ${image}:${env.GIT_COMMIT_SHORT} \
                                 -t ${image}:latest .
                                 """
@@ -187,7 +186,7 @@ pipeline {
                         }
                     }
 
-                    parallel jobs
+                    parallel builds
                 }
             }
         }
