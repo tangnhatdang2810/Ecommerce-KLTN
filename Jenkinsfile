@@ -215,11 +215,12 @@ pipeline {
                         'shippingservice','apigateway','frontend'
                     ]
 
-                    def scans = []
+                    // Map đúng chuẩn Jenkins
+                    def scans = [:]
 
                     services.each { svc ->
 
-                        scans << ["Scan ${svc}": {
+                        scans["Scan ${svc}"] = {
 
                             def image =
                                 "${DOCKER_REGISTRY}/${IMAGE_PREFIX}-${svc}:${env.GIT_COMMIT_SHORT}"
@@ -236,13 +237,22 @@ pipeline {
                                 --format table \
                                 ${image}
                             """
-                        }]
+                        }
                     }
 
-                    // chạy tối đa 3 scan cùng lúc
-                    def batches = scans.collate(3)
+                    // ===== CHIA BATCH (3 JOB SONG SONG) =====
+                    def keys = scans.keySet().toList()
+                    def batchSize = 3
 
-                    for (batch in batches) {
+                    for (int i = 0; i < keys.size(); i += batchSize) {
+
+                        def batch = [:]
+
+                        keys.subList(i, Math.min(i + batchSize, keys.size()))
+                            .each { k ->
+                                batch[k] = scans[k]
+                            }
+
                         parallel batch
                     }
                 }
