@@ -147,7 +147,7 @@ pipeline {
                                 withCredentials([string(credentialsId: 'nvd-api-key', variable: 'NVD_KEY')]) {
                                     // Chạy maven check cho từng service
                                     // -DfailOnError=false để 1 service lỗi NVD không làm sập cả pipeline
-                                    sh 'mvn org.owasp:dependency-check-maven:check -DnvdApiKey=${NVD_KEY} -Dformat=XML -Dformat=HTML -DautoUpdate=true -DfailOnError=false'
+                                    sh """mvn org.owasp:dependency-check-maven:check -DnvdApiKey=${NVD_KEY} -Dformat=XML -Dformat=HTML -DautoUpdate=true -DfailOnError=false"""
                                 }
                             }
                         }
@@ -157,8 +157,20 @@ pipeline {
             }
             post {
                 always {
-                    // Gom tất cả báo cáo từ các thư mục con về
-                    dependencyCheckPublisher pattern: 'src/**/target/dependency-check-report.xml'
+                    script {
+                        def reports = sh(
+                            script: "ls src/**/target/dependency-check-report.xml 2>/dev/null | wc -l",
+                            returnStdout: true
+                        ).trim()
+
+                        if (reports != "0") {
+                            dependencyCheckPublisher(
+                                pattern: 'src/**/target/dependency-check-report.xml'
+                            )
+                        } else {
+                            echo "⚠ No dependency-check reports found, skip publishing"
+                        }
+                    }
                 }
             }
         }
