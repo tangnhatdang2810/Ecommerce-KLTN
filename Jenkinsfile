@@ -315,33 +315,31 @@ pipeline {
                 }
             }
         }
-        
-    /*
+
     // =================================================
-    // DAST - OWASP ZAP
+    // DAST - OWASP ZAP (Uncomment khi cần)
     // =================================================
-        stage('DAST - OWASP ZAP') {
-            steps {
-                sh '''
-                docker compose up -d
-
-                echo "Waiting application..."
-                sleep 30
-
-                docker run --rm \
-                  --network host \
-                  -v $(pwd):/zap/wrk \
-                  zaproxy/zap-stable \
-                  zap-baseline.py \
-                  -t http://localhost:8080 \
-                  -r zap-report.html || true
-
-                docker compose down
-                '''
-            }
-        }
+    //     stage('DAST - OWASP ZAP') {
+    //         steps {
+    //             sh '''
+    //             docker compose up -d
+    //
+    //             echo "Waiting application..."
+    //             sleep 30
+    //
+    //             docker run --rm \
+    //               --network host \
+    //               -v $(pwd):/zap/wrk \
+    //               zaproxy/zap-stable \
+    //               zap-baseline.py \
+    //               -t http://localhost:8080 \
+    //               -r zap-report.html || true
+    //
+    //             docker compose down
+    //             '''
+    //         }
+    //     }
     }
-    */
 
     // =================================================
     // CLEANUP
