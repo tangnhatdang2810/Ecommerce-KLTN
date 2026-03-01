@@ -183,6 +183,18 @@ pipeline {
     // =================================================
     // TRIVY SCAN (PARALLEL + OPTIMIZED)
     // =================================================
+        stage('Trivy DB Warmup') {
+            steps {
+                sh """
+                mkdir -p ${TRIVY_CACHE_DIR}
+
+                trivy image \
+                    --download-db-only \
+                    --cache-dir ${TRIVY_CACHE_DIR}
+                """
+            }
+        }
+
         stage('Trivy Scan Docker Images') {
             steps {
                 script {
@@ -191,28 +203,28 @@ pipeline {
                         'paymentservice','productcatalogservice',
                         'shippingservice','apigateway','frontend'
                     ]
+
                     def scans = [:]
 
                     for (svc in services) {
                         def s = svc
                         scans["Scan ${s}"] = {
-                            def image = "${DOCKER_REGISTRY}/${IMAGE_PREFIX}-${s}:${env.GIT_COMMIT_SHORT}"
-                    
-                            // Tạo thư mục cache riêng cho từng service để tránh tranh chấp (Lock)
-                            def localCache = "${TRIVY_CACHE_DIR}/${s}"
-                            sh "mkdir -p ${localCache}"
+
+                            def image =
+                                "${DOCKER_REGISTRY}/${IMAGE_PREFIX}-${s}:${env.GIT_COMMIT_SHORT}"
 
                             sh """
                             trivy image \
-                                --cache-dir ${localCache} \
+                                --cache-dir ${TRIVY_CACHE_DIR} \
+                                --skip-db-update \
                                 --severity HIGH,CRITICAL \
                                 --exit-code 0 \
                                 --format table \
                                 ${image}
                             """
-                            // Ghi chú: Bỏ --skip-db-update ở lần chạy đầu để nó tải DB về nhé
                         }
                     }
+
                     parallel scans
                 }
             }
