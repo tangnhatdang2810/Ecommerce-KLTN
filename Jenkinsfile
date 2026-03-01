@@ -215,21 +215,17 @@ pipeline {
                         'shippingservice','apigateway','frontend'
                     ]
 
-                    def scans = [:]
+                    def scans = []
 
-                    for (svc in services) {
-                        def s = svc
+                    services.each { svc ->
 
-                        scans["Scan ${s}"] = {
+                        scans << ["Scan ${svc}": {
 
                             def image =
-                                "${DOCKER_REGISTRY}/${IMAGE_PREFIX}-${s}:${env.GIT_COMMIT_SHORT}"
+                                "${DOCKER_REGISTRY}/${IMAGE_PREFIX}-${svc}:${env.GIT_COMMIT_SHORT}"
 
                             sh """
-                            echo "===== TRIVY SCAN ${s} ====="
-
-                            # tránh tất cả job start cùng lúc → giảm cache lock
-                            sleep \$((RANDOM % 5))
+                            echo "===== TRIVY SCAN ${svc} ====="
 
                             trivy image \
                                 --cache-dir ${TRIVY_CACHE_DIR} \
@@ -240,10 +236,15 @@ pipeline {
                                 --format table \
                                 ${image}
                             """
-                        }
+                        }]
                     }
 
-                    parallel scans
+                    // chạy tối đa 3 scan cùng lúc
+                    def batches = scans.collate(3)
+
+                    for (batch in batches) {
+                        parallel batch
+                    }
                 }
             }
         }
