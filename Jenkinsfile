@@ -136,7 +136,7 @@ pipeline {
                                 withCredentials([string(credentialsId: 'nvd-api-key', variable: 'NVD_KEY')]) {
                                     // Chạy maven check cho từng service
                                     // -DfailOnError=false để 1 service lỗi NVD không làm sập cả pipeline
-                                    sh "mvn org.owasp:dependency-check-maven:check -DnvdApiKey=${NVD_KEY} -Dformat=XML -Dformat=HTML -DautoUpdate=false -DfailOnError=false"
+                                    sh 'mvn org.owasp:dependency-check-maven:check -DnvdApiKey=${NVD_KEY} -Dformat=XML -Dformat=HTML -DautoUpdate=false -DfailOnError=false'
                                 }
                             }
                         }
