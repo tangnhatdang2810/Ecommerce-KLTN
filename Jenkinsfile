@@ -145,7 +145,7 @@ pipeline {
                 }
             }
             post {
-                success {
+                always {
                     // Gom tất cả báo cáo từ các thư mục con về
                     dependencyCheckPublisher pattern: 'src/**/target/dependency-check-report.xml'
                 }
