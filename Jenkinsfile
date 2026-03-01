@@ -186,11 +186,21 @@ pipeline {
         stage('Trivy DB Warmup') {
             steps {
                 sh """
+                echo "===== TRIVY DB WARMUP ====="
+
                 mkdir -p ${TRIVY_CACHE_DIR}
 
+                # Download Vulnerability DB
                 trivy image \
                     --download-db-only \
                     --cache-dir ${TRIVY_CACHE_DIR}
+
+                # Download Java vulnerability DB (QUAN TRỌNG cho Maven images)
+                trivy image \
+                    --download-java-db-only \
+                    --cache-dir ${TRIVY_CACHE_DIR}
+
+                echo "===== TRIVY DB READY ====="
                 """
             }
         }
@@ -198,6 +208,7 @@ pipeline {
         stage('Trivy Scan Docker Images') {
             steps {
                 script {
+
                     def services = [
                         'authservice','cartservice','checkoutservice',
                         'paymentservice','productcatalogservice',
@@ -208,15 +219,22 @@ pipeline {
 
                     for (svc in services) {
                         def s = svc
+
                         scans["Scan ${s}"] = {
 
                             def image =
                                 "${DOCKER_REGISTRY}/${IMAGE_PREFIX}-${s}:${env.GIT_COMMIT_SHORT}"
 
                             sh """
+                            echo "===== TRIVY SCAN ${s} ====="
+
+                            # tránh tất cả job start cùng lúc → giảm cache lock
+                            sleep \$((RANDOM % 5))
+
                             trivy image \
                                 --cache-dir ${TRIVY_CACHE_DIR} \
                                 --skip-db-update \
+                                --scanners vuln \
                                 --severity HIGH,CRITICAL \
                                 --exit-code 0 \
                                 --format table \
