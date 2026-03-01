@@ -129,7 +129,10 @@ pipeline {
                 ''', 
                 odcInstallation: 'dependency-check'
 
-                // Sửa pattern lại thành tìm ở bất cứ đâu trong workspace cho chắc
+                // Kiểm tra xem file có thực sự tồn tại sau khi scan không
+                sh 'ls -lh dependency-check-report.xml' 
+
+                // Sử dụng Ant-style pattern để tìm file ở bất cứ đâu trong workspace
                 dependencyCheckPublisher pattern: '**/dependency-check-report.xml'
             }
         }
