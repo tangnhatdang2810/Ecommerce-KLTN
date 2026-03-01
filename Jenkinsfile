@@ -119,22 +119,36 @@ pipeline {
     // =================================================
     // OWASP DEPENDENCY CHECK (SCA)
     // =================================================
-        stage('OWASP Dependency Check') {
+        stage('OWASP Dependency Check - Parallel') {
             steps {
-                withCredentials([string(credentialsId: 'nvd-api-key', variable: 'NVD_KEY')]) {
-                    // Sử dụng biến môi trường trực tiếp, không dùng nội suy chuỗi ${} của Groovy
-                    dependencyCheck additionalArguments: """
-                        --scan 'src/' 
-                        --format 'XML' 
-                        --format 'HTML' 
-                        --out '.' 
-                        --nvdApiKey ${NVD_KEY}
-                        --nvdApiDelay 16000
-                    """, 
-                    odcInstallation: 'dependency-check'
+                script {
+                    def services = [
+                        'authservice', 'cartservice', 'checkoutservice', 
+                        'paymentservice', 'productcatalogservice', 
+                        'shippingservice', 'apigateway'
+                    ]
+                    def jobs = [:]
+
+                    for (svc in services) {
+                        def s = svc
+                        jobs["SCA ${s}"] = {
+                            dir("src/${s}") {
+                                withCredentials([string(credentialsId: 'nvd-api-key', variable: 'NVD_KEY')]) {
+                                    // Chạy maven check cho từng service
+                                    // -DfailOnError=false để 1 service lỗi NVD không làm sập cả pipeline
+                                    sh "mvn org.owasp:dependency-check-maven:check -DnvdApiKey=${NVD_KEY} -Dformat=XML -Dformat=HTML -DautoUpdate=false -DfailOnError=false"
+                                }
+                            }
+                        }
+                    }
+                    parallel jobs
                 }
-        
-                dependencyCheckPublisher pattern: 'dependency-check-report.xml'
+            }
+            post {
+                success {
+                    // Gom tất cả báo cáo từ các thư mục con về
+                    dependencyCheckPublisher pattern: 'src/**/target/dependency-check-report.xml'
+                }
             }
         }
 
