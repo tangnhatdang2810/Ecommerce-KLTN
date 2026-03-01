@@ -121,23 +121,20 @@ pipeline {
     // =================================================
         stage('OWASP Dependency Check') {
             steps {
-                script {
-                    // Sử dụng Maven để quét thay vì dùng tool cài sẵn trên Jenkins
-                    // Chúng ta truyền API Key trực tiếp vào lệnh Maven
-                    withCredentials([string(credentialsId: 'nvd-api-key', variable: 'NVD_KEY')]) {
-                        sh """
-                            mvn org.owasp:dependency-check-maven:check \
-                                -DnvdApiKey=${NVD_KEY} \
-                                -Dformat=XML \
-                                -Dformat=HTML \
-                                -DautoUpdate=true \
-                                -DfailOnError=false
-                        """
-                    }
+                withCredentials([string(credentialsId: 'nvd-api-key', variable: 'NVD_KEY')]) {
+                    // Sử dụng biến môi trường trực tiếp, không dùng nội suy chuỗi ${} của Groovy
+                    dependencyCheck additionalArguments: """
+                        --scan 'src/' 
+                        --format 'XML' 
+                        --format 'HTML' 
+                        --out '.' 
+                        --nvdApiKey ${NVD_KEY}
+                        --nvdApiDelay 16000
+                    """, 
+                    odcInstallation: 'dependency-check'
                 }
-                // Sau khi chạy xong, Maven thường tạo báo cáo trong folder target/ của các service
-                // Chúng ta sẽ gom tất cả báo cáo đó lại
-                dependencyCheckPublisher pattern: '**/target/dependency-check-report.xml'
+        
+                dependencyCheckPublisher pattern: 'dependency-check-report.xml'
             }
         }
 
