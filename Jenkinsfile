@@ -186,35 +186,33 @@ pipeline {
         stage('Trivy Scan Docker Images') {
             steps {
                 script {
-
                     def services = [
                         'authservice','cartservice','checkoutservice',
                         'paymentservice','productcatalogservice',
                         'shippingservice','apigateway','frontend'
                     ]
-
                     def scans = [:]
 
                     for (svc in services) {
                         def s = svc
                         scans["Scan ${s}"] = {
-
-                            def image =
-                              "${DOCKER_REGISTRY}/${IMAGE_PREFIX}-${s}:${env.GIT_COMMIT_SHORT}"
+                            def image = "${DOCKER_REGISTRY}/${IMAGE_PREFIX}-${s}:${env.GIT_COMMIT_SHORT}"
+                    
+                            // Tạo thư mục cache riêng cho từng service để tránh tranh chấp (Lock)
+                            def localCache = "${TRIVY_CACHE_DIR}/${s}"
+                            sh "mkdir -p ${localCache}"
 
                             sh """
                             trivy image \
-                              --cache-dir \$TRIVY_CACHE_DIR \
-                              --skip-db-update \
-                              --skip-java-db-update \
-                              --severity HIGH,CRITICAL \
-                              --exit-code 0 \
-                              --format table \
-                              ${image}
+                                --cache-dir ${localCache} \
+                                --severity HIGH,CRITICAL \
+                                --exit-code 0 \
+                                --format table \
+                                ${image}
                             """
+                            // Ghi chú: Bỏ --skip-db-update ở lần chạy đầu để nó tải DB về nhé
                         }
                     }
-
                     parallel scans
                 }
             }
