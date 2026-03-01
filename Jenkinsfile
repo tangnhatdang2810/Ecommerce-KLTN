@@ -119,6 +119,17 @@ pipeline {
     // =================================================
     // OWASP DEPENDENCY CHECK (SCA)
     // =================================================
+        stage('OWASP DB Warmup') {
+            steps {
+                withCredentials([string(credentialsId: 'nvd-api-key', variable: 'NVD_KEY')]) {
+                    sh """
+                    mvn org.owasp:dependency-check-maven:update-only \
+                        -DnvdApiKey=${NVD_KEY}
+                    """
+                }
+            }
+        }
+
         stage('OWASP Dependency Check - Parallel') {
             steps {
                 script {
@@ -136,7 +147,7 @@ pipeline {
                                 withCredentials([string(credentialsId: 'nvd-api-key', variable: 'NVD_KEY')]) {
                                     // Chạy maven check cho từng service
                                     // -DfailOnError=false để 1 service lỗi NVD không làm sập cả pipeline
-                                    sh 'mvn org.owasp:dependency-check-maven:check -DnvdApiKey=${NVD_KEY} -Dformat=XML -Dformat=HTML -DautoUpdate=false -DfailOnError=false'
+                                    sh 'mvn org.owasp:dependency-check-maven:check -DnvdApiKey=${NVD_KEY} -Dformat=XML -Dformat=HTML -DautoUpdate=true -DfailOnError=false'
                                 }
                             }
                         }
