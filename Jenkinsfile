@@ -121,18 +121,20 @@ pipeline {
     // =================================================
         stage('OWASP Dependency Check') {
             steps {
-                dependencyCheck additionalArguments: '''
-                    --scan ./src
-                    --format XML
-                    --format HTML
-                    --out .
-                ''', 
+                // Sử dụng dấu nháy kép "" thay vì nháy đơn '' để tránh lỗi nội suy chuỗi nếu cần
+                dependencyCheck additionalArguments: """
+                    --scan './src'
+                    --format 'ALL'
+                    --out '.'
+                """, 
                 odcInstallation: 'dependency-check'
 
-                // Kiểm tra xem file có thực sự tồn tại sau khi scan không
-                sh 'ls -lh dependency-check-report.xml' 
-
-                // Sử dụng Ant-style pattern để tìm file ở bất cứ đâu trong workspace
+                script {
+                    // Lệnh này sẽ giúp bạn debug: Tìm xem file thực sự nằm ở đâu
+                    sh 'find . -name "dependency-check-report.xml"'
+                }
+        
+                // Luôn sử dụng pattern quét sâu để Jenkins tự nhặt file
                 dependencyCheckPublisher pattern: '**/dependency-check-report.xml'
             }
         }
