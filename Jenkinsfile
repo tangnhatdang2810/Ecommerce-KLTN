@@ -158,24 +158,36 @@ pipeline {
         stage('Docker Build Images') {
             steps {
                 script {
+
                     def services = [
                         'authservice','cartservice','checkoutservice',
                         'paymentservice','productcatalogservice',
                         'shippingservice','apigateway','frontend'
                     ]
 
-                    for (svc in services) {
-                        def image =
-                          "${DOCKER_REGISTRY}/${IMAGE_PREFIX}-${svc}"
+                    def jobs = [:]
 
-                        dir("src/${svc}") {
-                            sh """
-                            docker build \
-                              -t ${image}:${env.GIT_COMMIT_SHORT} \
-                              -t ${image}:latest .
-                            """
+                    services.each { svc ->
+
+                        def s = svc
+
+                        jobs["Build ${s}"] = {
+
+                            def image =
+                                "${DOCKER_REGISTRY}/${IMAGE_PREFIX}-${s}"
+
+                            dir("src/${s}") {
+
+                                sh """
+                                DOCKER_BUILDKIT=1 docker build \
+                                -t ${image}:${env.GIT_COMMIT_SHORT} \
+                                -t ${image}:latest .
+                                """
+                            }
                         }
                     }
+
+                    parallel jobs
                 }
             }
         }
@@ -280,20 +292,31 @@ pipeline {
 
                         sh 'echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin'
 
-                        for (svc in services) {
-                            def image =
-                              "${DOCKER_REGISTRY}/${IMAGE_PREFIX}-${svc}"
+                        def jobs = [:]
 
-                            sh """
-                            docker push ${image}:${env.GIT_COMMIT_SHORT}
-                            docker push ${image}:latest
-                            """
+                        services.each { svc ->
+
+                            def s = svc
+
+                            jobs["Push ${s}"] = {
+
+                                def image =
+                                    "${DOCKER_REGISTRY}/${IMAGE_PREFIX}-${s}"
+
+                                sh """
+                                docker push ${image}:${env.GIT_COMMIT_SHORT}
+                                docker push ${image}:latest
+                                """
+                            }
                         }
+
+                        parallel jobs
                     }
                 }
             }
         }
-
+        
+    /*
     // =================================================
     // DAST - OWASP ZAP
     // =================================================
@@ -318,6 +341,7 @@ pipeline {
             }
         }
     }
+    */
 
     // =================================================
     // CLEANUP
