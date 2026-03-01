@@ -121,21 +121,24 @@ pipeline {
     // =================================================
         stage('OWASP Dependency Check') {
             steps {
-                // Xóa báo cáo cũ nếu có để tránh nhầm lẫn
+                // Xóa file cũ để đảm bảo kết quả mới hoàn toàn
                 sh 'rm -f dependency-check-report.xml'
 
-                dependencyCheck additionalArguments: """
-                    --scan 'src/'
-                    --format 'XML'
-                    --format 'HTML'
-                    --out '.'
-                    --project 'Ecommerce-KLTN'
-                    --failOnCVSS 7
-                """, 
-                odcInstallation: 'dependency-check'
+                // Gọi API Key từ Jenkins Credentials
+                withCredentials([string(credentialsId: 'nvd-api-key', variable: 'NVD_KEY')]) {
+                    dependencyCheck additionalArguments: """
+                        --scan 'src/'
+                        --format 'XML'
+                        --format 'HTML'
+                        --out '.'
+                        --project 'Ecommerce-KLTN'
+                        --nvdApiKey ${NVD_KEY}
+                    """, 
+                    odcInstallation: 'dependency-check'
+                }
 
-                // Kiểm tra lại xem file có thực sự được tạo ra không
-                sh 'ls -al dependency-check-report.xml || echo "FILE NOT FOUND AGAIN"'
+                // Kiểm tra xem lần này file đã xuất hiện chưa
+                sh 'ls -al dependency-check-report.xml'
         
                 dependencyCheckPublisher pattern: 'dependency-check-report.xml'
             }
