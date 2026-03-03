@@ -339,6 +339,40 @@ pipeline {
         }
 
     // =================================================
+    // UPDATE K8S MANIFESTS
+    // =================================================
+        stage('Update K8s Manifests') {
+            steps {
+                script {
+
+                    def services = [
+                        'authservice','cartservice','checkoutservice',
+                        'paymentservice','productcatalogservice',
+                        'shippingservice','apigateway','frontend'
+                    ]
+
+                    services.each { svc ->
+                        sh """
+                        sed -i 's|image: .*${svc}.*|image: ${DOCKER_REGISTRY}/${IMAGE_PREFIX}-${svc}:${env.GIT_COMMIT_SHORT}|' \
+                        k8s/app/${svc}.yaml
+                        """
+                    }
+
+                    withCredentials([gitUsernamePassword(credentialsId: 'github-creds')]) {
+                        sh """
+                        git config user.email "jenkins@ci"
+                        git config user.name "jenkins"
+
+                        git add k8s/
+                        git commit -m "Update image tag to ${env.GIT_COMMIT_SHORT}"
+                        git push origin main
+                        """
+                    }
+                }
+            }
+        }
+
+    // =================================================
     // DAST - OWASP ZAP (Uncomment khi cần)
     // =================================================
     //     stage('DAST - OWASP ZAP') {

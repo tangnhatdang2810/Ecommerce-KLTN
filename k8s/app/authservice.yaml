@@ -1,0 +1,88 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: authservice
+  namespace: app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: authservice
+  template:
+    metadata:
+      labels:
+        app: authservice
+    spec:
+      containers:
+        - name: authservice
+          image: tangnhatdang/ecommerce-kltn-authservice:latest
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: common-config
+          env:
+            - name: PORT
+              value: "8080"
+            - name: MYSQL_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: common-config
+                  key: MYSQL_AUTH_HOST
+            - name: MYSQL_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: common-config
+                  key: MYSQL_AUTH_PORT
+            - name: MYSQL_USER
+              valueFrom:
+                configMapKeyRef:
+                  name: common-config
+                  key: MYSQL_AUTH_USER
+            - name: MYSQL_PASSWORD
+              valueFrom:
+                configMapKeyRef:
+                  name: common-config
+                  key: MYSQL_AUTH_PASSWORD
+            - name: MYSQL_DATABASE
+              valueFrom:
+                configMapKeyRef:
+                  name: common-config
+                  key: MYSQL_AUTH_DATABASE
+            - name: JWT_SECRET
+              valueFrom:
+                configMapKeyRef:
+                  name: common-config
+                  key: JWT_SECRET
+          readinessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 300m
+              memory: 512Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: authservice
+  namespace: app
+spec:
+  selector:
+    app: authservice
+  ports:
+    - port: 8080
+      targetPort: 8080
+  type: ClusterIP

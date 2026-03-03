@@ -1,0 +1,60 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: shippingservice
+  namespace: app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: shippingservice
+  template:
+    metadata:
+      labels:
+        app: shippingservice
+    spec:
+      containers:
+        - name: shippingservice
+          image: tangnhatdang/ecommerce-kltn-shippingservice:latest
+          ports:
+            - containerPort: 50051
+          env:
+            - name: PORT
+              value: "50051"
+            - name: MONGO_ADDR
+              valueFrom:
+                configMapKeyRef:
+                  name: common-config
+                  key: MONGO_SHIPPING_ADDR
+          readinessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 50051
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 50051
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 300m
+              memory: 512Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: shippingservice
+  namespace: app
+spec:
+  selector:
+    app: shippingservice
+  ports:
+    - port: 50051
+      targetPort: 50051
+  type: ClusterIP

@@ -1,0 +1,80 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: paymentservice
+  namespace: app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: paymentservice
+  template:
+    metadata:
+      labels:
+        app: paymentservice
+    spec:
+      containers:
+        - name: paymentservice
+          image: tangnhatdang/ecommerce-kltn-paymentservice:latest
+          ports:
+            - containerPort: 50051
+          env:
+            - name: PORT
+              value: "50051"
+            - name: MYSQL_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: common-config
+                  key: MYSQL_PAYMENT_HOST
+            - name: MYSQL_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: common-config
+                  key: MYSQL_PAYMENT_PORT
+            - name: MYSQL_USER
+              valueFrom:
+                configMapKeyRef:
+                  name: common-config
+                  key: MYSQL_PAYMENT_USER
+            - name: MYSQL_PASSWORD
+              valueFrom:
+                configMapKeyRef:
+                  name: common-config
+                  key: MYSQL_PAYMENT_PASSWORD
+            - name: MYSQL_DATABASE
+              valueFrom:
+                configMapKeyRef:
+                  name: common-config
+                  key: MYSQL_PAYMENT_DATABASE
+          readinessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 50051
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 50051
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 300m
+              memory: 512Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: paymentservice
+  namespace: app
+spec:
+  selector:
+    app: paymentservice
+  ports:
+    - port: 50051
+      targetPort: 50051
+  type: ClusterIP

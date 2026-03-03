@@ -1,0 +1,35 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: common-config
+  namespace: app
+data:
+  # Database addresses (cross-namespace DNS)
+  MYSQL_AUTH_HOST: "mysql-auth.infra.svc.cluster.local"
+  MYSQL_AUTH_PORT: "3306"
+  MYSQL_AUTH_USER: "authuser"
+  MYSQL_AUTH_PASSWORD: "authpassword"
+  MYSQL_AUTH_DATABASE: "authdb"
+
+  MYSQL_PAYMENT_HOST: "mysql-payment.infra.svc.cluster.local"
+  MYSQL_PAYMENT_PORT: "3306"
+  MYSQL_PAYMENT_USER: "paymentuser"
+  MYSQL_PAYMENT_PASSWORD: "paymentpassword"
+  MYSQL_PAYMENT_DATABASE: "paymentdb"
+
+  MONGO_PRODUCTCATALOG_ADDR: "mongodb://mongo-productcatalog.infra.svc.cluster.local:27017"
+  MONGO_SHIPPING_ADDR: "mongodb://mongo-shipping.infra.svc.cluster.local:27017"
+  MONGO_CHECKOUT_ADDR: "mongodb://mongo-checkout.infra.svc.cluster.local:27017"
+
+  REDIS_CART_ADDR: "redis-cart.infra.svc.cluster.local:6379"
+
+  # Application service addresses (same namespace DNS)
+  AUTH_SERVICE_ADDR: "authservice:8080"
+  CART_SERVICE_ADDR: "cartservice:7070"
+  PRODUCT_CATALOG_SERVICE_ADDR: "productcatalogservice:3550"
+  PAYMENT_SERVICE_ADDR: "paymentservice:50051"
+  SHIPPING_SERVICE_ADDR: "shippingservice:50051"
+  CHECKOUT_SERVICE_ADDR: "checkoutservice:5050"
+  API_GATEWAY_ADDR: "apigateway:9090"
+
+  JWT_SECRET: "online-boutique-jwt-secret"
