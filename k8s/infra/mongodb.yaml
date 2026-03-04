@@ -30,19 +30,20 @@ spec:
       containers:
         - name: mongodb
           image: mongo:latest
+          args: ["--wiredTigerCacheSizeGB", "0.1"]
           ports:
             - containerPort: 27017
           volumeMounts:
             - name: mongodb-data
               mountPath: /data/db
           readinessProbe:
-            exec:
-              command: ["mongosh", "--eval", "db.adminCommand('ping')"]
+            tcpSocket:
+              port: 27017
             initialDelaySeconds: 15
             periodSeconds: 10
           livenessProbe:
-            exec:
-              command: ["mongosh", "--eval", "db.adminCommand('ping')"]
+            tcpSocket:
+              port: 27017
             initialDelaySeconds: 20
             periodSeconds: 10
           resources:
