@@ -25,7 +25,7 @@ spec:
               valueFrom:
                 configMapKeyRef:
                   name: common-config
-                  key: REDIS_CART_ADDR
+                  key: REDIS_ADDR
           readinessProbe:
             httpGet:
               path: /actuator/health

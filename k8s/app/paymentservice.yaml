@@ -25,12 +25,12 @@ spec:
               valueFrom:
                 configMapKeyRef:
                   name: common-config
-                  key: MYSQL_PAYMENT_HOST
+                  key: MYSQL_HOST
             - name: MYSQL_PORT
               valueFrom:
                 configMapKeyRef:
                   name: common-config
-                  key: MYSQL_PAYMENT_PORT
+                  key: MYSQL_PORT
             - name: MYSQL_USER
               valueFrom:
                 configMapKeyRef:

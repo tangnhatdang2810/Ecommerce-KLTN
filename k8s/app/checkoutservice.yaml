@@ -45,7 +45,7 @@ spec:
               valueFrom:
                 configMapKeyRef:
                   name: common-config
-                  key: MONGO_CHECKOUT_ADDR
+                  key: MONGO_ADDR
           readinessProbe:
             httpGet:
               path: /actuator/health

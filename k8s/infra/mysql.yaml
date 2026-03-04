@@ -1,29 +1,31 @@
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: mysql-auth-pvc
+  name: mysql-pvc
   namespace: infra
 spec:
   accessModes:
     - ReadWriteOnce
   resources:
     requests:
-      storage: 1Gi
+      storage: 2Gi
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: mysql-auth
+  name: mysql
   namespace: infra
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
-      app: mysql-auth
+      app: mysql
   template:
     metadata:
       labels:
-        app: mysql-auth
+        app: mysql
     spec:
       containers:
         - name: mysql
@@ -33,15 +35,11 @@ spec:
           env:
             - name: MYSQL_ROOT_PASSWORD
               value: "rootpassword"
-            - name: MYSQL_DATABASE
-              value: "authdb"
-            - name: MYSQL_USER
-              value: "authuser"
-            - name: MYSQL_PASSWORD
-              value: "authpassword"
           volumeMounts:
-            - name: mysql-auth-data
+            - name: mysql-data
               mountPath: /var/lib/mysql
+            - name: init-scripts
+              mountPath: /docker-entrypoint-initdb.d
           readinessProbe:
             exec:
               command: ["mysqladmin", "ping", "-h", "localhost"]
@@ -60,18 +58,38 @@ spec:
               cpu: 300m
               memory: 512Mi
       volumes:
-        - name: mysql-auth-data
+        - name: mysql-data
           persistentVolumeClaim:
-            claimName: mysql-auth-pvc
+            claimName: mysql-pvc
+        - name: init-scripts
+          configMap:
+            name: mysql-init
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mysql-init
+  namespace: infra
+data:
+  init.sql: |
+    CREATE DATABASE IF NOT EXISTS authdb;
+    CREATE USER IF NOT EXISTS 'authuser'@'%' IDENTIFIED BY 'authpassword';
+    GRANT ALL PRIVILEGES ON authdb.* TO 'authuser'@'%';
+
+    CREATE DATABASE IF NOT EXISTS paymentdb;
+    CREATE USER IF NOT EXISTS 'paymentuser'@'%' IDENTIFIED BY 'paymentpassword';
+    GRANT ALL PRIVILEGES ON paymentdb.* TO 'paymentuser'@'%';
+
+    FLUSH PRIVILEGES;
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: mysql-auth
+  name: mysql
   namespace: infra
 spec:
   selector:
-    app: mysql-auth
+    app: mysql
   ports:
     - port: 3306
       targetPort: 3306
