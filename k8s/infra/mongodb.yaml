@@ -30,7 +30,7 @@ spec:
       containers:
         - name: mongodb
           image: mongo:latest
-          args: ["--wiredTigerCacheSizeGB", "0.1"]
+          args: ["--wiredTigerCacheSizeGB", "0.25"]
           ports:
             - containerPort: 27017
           volumeMounts:
