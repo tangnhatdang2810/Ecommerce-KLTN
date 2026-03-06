@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: authservice
-          image: tangnhatdang/ecommerce-kltn-authservice:cd84b44
+          image: tangnhatdang/ecommerce-kltn-authservice:7498650
           ports:
             - containerPort: 8080
           envFrom:
