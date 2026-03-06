@@ -78,10 +78,13 @@ kind: Service
 metadata:
   name: apigateway
   namespace: app
+  labels:
+    app: spring-service
 spec:
   selector:
     app: apigateway
   ports:
-    - port: 9090
+    - name: http
+      port: 9090
       targetPort: 9090
   type: ClusterIP

@@ -53,10 +53,13 @@ kind: Service
 metadata:
   name: shippingservice
   namespace: app
+  labels:
+    app: spring-service
 spec:
   selector:
     app: shippingservice
   ports:
-    - port: 50051
+    - name: http
+      port: 50051
       targetPort: 50051
   type: ClusterIP

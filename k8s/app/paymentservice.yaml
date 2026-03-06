@@ -73,10 +73,13 @@ kind: Service
 metadata:
   name: paymentservice
   namespace: app
+  labels:
+    app: spring-service
 spec:
   selector:
     app: paymentservice
   ports:
-    - port: 50051
+    - name: http
+      port: 50051
       targetPort: 50051
   type: ClusterIP

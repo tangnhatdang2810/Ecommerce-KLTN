@@ -53,10 +53,13 @@ kind: Service
 metadata:
   name: cartservice
   namespace: app
+  labels:
+    app: spring-service
 spec:
   selector:
     app: cartservice
   ports:
-    - port: 7070
+    - name: http
+      port: 7070
       targetPort: 7070
   type: ClusterIP

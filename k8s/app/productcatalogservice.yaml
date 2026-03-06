@@ -53,10 +53,13 @@ kind: Service
 metadata:
   name: productcatalogservice
   namespace: app
+  labels:
+    app: spring-service
 spec:
   selector:
     app: productcatalogservice
   ports:
-    - port: 3550
+    - name: http
+      port: 3550
       targetPort: 3550
   type: ClusterIP

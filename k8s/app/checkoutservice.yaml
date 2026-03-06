@@ -73,10 +73,13 @@ kind: Service
 metadata:
   name: checkoutservice
   namespace: app
+  labels:
+    app: spring-service
 spec:
   selector:
     app: checkoutservice
   ports:
-    - port: 5050
+    - name: http
+      port: 5050
       targetPort: 5050
   type: ClusterIP
