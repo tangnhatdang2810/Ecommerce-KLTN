@@ -3,6 +3,8 @@ kind: ServiceMonitor
 metadata:
   name: spring-services
   namespace: monitoring
+  labels:
+    release: monitoring
 spec:
   namespaceSelector:
     matchNames:
