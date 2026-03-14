@@ -62,6 +62,17 @@ management:
       export:
         enabled: true
 
+  metrics:
+    distribution:
+      percentiles-histogram:
+        http:
+          server:
+            requests: true
+      sla:
+        http:
+          server:
+            requests: 50ms,100ms,250ms,500ms,1s,2s
+
 logging:
   level:
     org.springframework.cloud.gateway: INFO
