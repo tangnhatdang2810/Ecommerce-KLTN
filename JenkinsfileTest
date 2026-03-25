@@ -195,7 +195,7 @@ pipeline {
                         builds["Build ${s}"] = {
 
                             def image =
-                                "${DOCKER_REGISTRY}/${IMAGE_PREFIX}-${s}"
+                                "${DOCKER_REGISTRY}/${IMAGE_PREFIX.trim()}-${s}"
 
                             dir("src/${s}") {
                                 sh """
@@ -254,7 +254,7 @@ pipeline {
                         scans["Scan ${svc}"] = {
 
                             def image =
-                                "${DOCKER_REGISTRY}/${IMAGE_PREFIX}-${svc}:${env.GIT_COMMIT_SHORT}"
+                                "${DOCKER_REGISTRY}/${IMAGE_PREFIX.trim()}-${svc}:${env.GIT_COMMIT_SHORT}"
 
                             sh """
                             echo "===== TRIVY SCAN ${svc} ====="
@@ -319,7 +319,7 @@ pipeline {
                             jobs["Push ${s}"] = {
 
                                 def image =
-                                    "${DOCKER_REGISTRY}/${IMAGE_PREFIX}-${s}"
+                                    "${DOCKER_REGISTRY}/${IMAGE_PREFIX.trim()}-${s}"
 
                                 sh """
                                 docker push ${image}:${env.GIT_COMMIT_SHORT}
