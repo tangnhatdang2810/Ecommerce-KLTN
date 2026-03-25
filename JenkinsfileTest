@@ -2,7 +2,7 @@ pipeline {
     agent { label 'agent-1' }
 
     environment {
-        DOCKER_REGISTRY  = "tangnhatdang"
+        DOCKER_REGISTRY  = "dohuynhan2408"
         IMAGE_PREFIX     = "ecommerce-kltn"
         SONAR_HOME       = "/opt/sonar-scanner"
 
