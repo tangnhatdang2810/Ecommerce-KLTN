@@ -261,7 +261,6 @@ pipeline {
 
                             trivy image \
                                 --cache-dir ${TRIVY_CACHE_DIR}/${svc} \
-                                --skip-db-update \
                                 --scanners vuln \
                                 --severity HIGH,CRITICAL \
                                 --exit-code 0 \
