@@ -260,7 +260,7 @@ pipeline {
                             echo "===== TRIVY SCAN ${svc} ====="
 
                             trivy image \
-                                --cache-dir ${TRIVY_CACHE_DIR} \
+                                --cache-dir ${TRIVY_CACHE_DIR}/${svc} \
                                 --skip-db-update \
                                 --scanners vuln \
                                 --severity HIGH,CRITICAL \
