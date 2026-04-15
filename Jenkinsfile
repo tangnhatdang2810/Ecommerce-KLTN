@@ -358,6 +358,11 @@ pipeline {
                         """
                     }
 
+                    sh """
+                    sed -i 's|image: .*autoscaler.*|image: ${DOCKER_REGISTRY}/${IMAGE_PREFIX}-autoscaler:${env.GIT_COMMIT_SHORT}|' \
+                    k8s/autoscaler/deployment.yaml
+                    """
+
                     withCredentials([gitUsernamePassword(credentialsId: 'github-creds')]) {
                         sh """
                         git config user.email "jenkins@ci"
