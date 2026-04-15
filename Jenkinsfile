@@ -138,13 +138,7 @@ pipeline {
                         jobs["SCA ${s}"] = {
                             dir("src/${s}") {
                                 withCredentials([string(credentialsId: 'nvd-api-key', variable: 'NVD_KEY')]) {
-                                    // Use sh with array syntax to safely pass credentials
-                                    // -DfailOnError=false để 1 service lỗi NVD không làm sập cả pipeline
-                                    sh(['bash', '-c', '''mvn org.owasp:dependency-check-maven:check \
-                                        -DnvdApiKey=$NVD_KEY \
-                                        -Dformat=XML -Dformat=HTML \
-                                        -DautoUpdate=true \
-                                        -DfailOnError=false || true'''])
+                                    sh 'mvn org.owasp:dependency-check-maven:check -DnvdApiKey=$NVD_KEY -Dformat=XML -Dformat=HTML -DautoUpdate=true -DfailOnError=false || true'
                                 }
                             }
                         }
