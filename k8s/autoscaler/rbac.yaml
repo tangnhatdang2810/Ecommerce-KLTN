@@ -1,0 +1,38 @@
+---
+# ServiceAccount for RL Autoscaler
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: rl-autoscaler
+  namespace: app
+
+---
+# Role for RL Autoscaler
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: rl-autoscaler
+  namespace: app
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "patch", "update"]
+  - apiGroups: ["apps"]
+    resources: ["deployments/scale"]
+    verbs: ["get", "patch", "update"]
+
+---
+# RoleBinding for RL Autoscaler
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: rl-autoscaler
+  namespace: app
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: rl-autoscaler
+subjects:
+  - kind: ServiceAccount
+    name: rl-autoscaler
+    namespace: app
