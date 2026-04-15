@@ -205,6 +205,15 @@ pipeline {
             }
         }
 
+        stage('Build RL Autoscaler') {
+            steps {
+                sh """
+                docker build -t ${DOCKER_REGISTRY}/${IMAGE_PREFIX}-autoscaler:${env.GIT_COMMIT_SHORT} \
+                             -t ${DOCKER_REGISTRY}/${IMAGE_PREFIX}-autoscaler:latest autoscaler/
+                """
+            }
+        }
+
     // =================================================
     // TRIVY SCAN (PARALLEL + OPTIMIZED)
     // =================================================
@@ -237,7 +246,7 @@ pipeline {
                     def services = [
                         'authservice','cartservice','checkoutservice',
                         'paymentservice','productcatalogservice',
-                        'shippingservice','apigateway','frontend'
+                        'shippingservice','apigateway','frontend','autoscaler'
                     ]
 
                     // Map đúng chuẩn Jenkins
@@ -294,7 +303,7 @@ pipeline {
                     def services = [
                         'authservice','cartservice','checkoutservice',
                         'paymentservice','productcatalogservice',
-                        'shippingservice','apigateway','frontend'
+                        'shippingservice','apigateway','frontend','autoscaler'
                     ]
 
                     withCredentials([usernamePassword(
