@@ -167,7 +167,7 @@ pipeline {
         }
 
     // =================================================
-    // DOCKER BUILD
+    // DOCKER BUILD (PARALLEL + BATCH OPTIMIZED)
     // =================================================
         stage('Docker Build Images') {
             steps {
@@ -181,6 +181,7 @@ pipeline {
 
                     def builds = [:]
 
+                    // Add microservices
                     services.each { svc ->
 
                         def s = svc
@@ -200,17 +201,30 @@ pipeline {
                         }
                     }
 
-                    parallel builds
-                }
-            }
-        }
+                    // Add RL Autoscaler to batch
+                    builds["Build autoscaler"] = {
+                        sh """
+                        docker build -t ${DOCKER_REGISTRY}/${IMAGE_PREFIX}-autoscaler:${env.GIT_COMMIT_SHORT} \
+                                     -t ${DOCKER_REGISTRY}/${IMAGE_PREFIX}-autoscaler:latest autoscaler/
+                        """
+                    }
 
-        stage('Build RL Autoscaler') {
-            steps {
-                sh """
-                docker build -t ${DOCKER_REGISTRY}/${IMAGE_PREFIX}-autoscaler:${env.GIT_COMMIT_SHORT} \
-                             -t ${DOCKER_REGISTRY}/${IMAGE_PREFIX}-autoscaler:latest autoscaler/
-                """
+                    // ===== CHIA BATCH (3 JOBS SONG SONG) =====
+                    def keys = builds.keySet().toList()
+                    def batchSize = 3
+
+                    for (int i = 0; i < keys.size(); i += batchSize) {
+
+                        def batch = [:]
+
+                        keys.subList(i, Math.min(i + batchSize, keys.size()))
+                            .each { k ->
+                                batch[k] = builds[k]
+                            }
+
+                        parallel batch
+                    }
+                }
             }
         }
 
