@@ -138,7 +138,7 @@ pipeline {
                         jobs["SCA ${s}"] = {
                             dir("src/${s}") {
                                 withCredentials([string(credentialsId: 'nvd-api-key', variable: 'NVD_KEY')]) {
-                                    sh 'mvn org.owasp:dependency-check-maven:check -DnvdApiKey=$NVD_KEY -Dformat=XML -Dformat=HTML -DautoUpdate=true -DfailOnError=false || true'
+                                    sh 'mvn org.owasp:dependency-check-maven:check -DnvdApiKey=$NVD_KEY -Dformat=XML -Dformat=HTML -DautoUpdate=false -DfailOnError=false || true'
                                 }
                             }
                         }
