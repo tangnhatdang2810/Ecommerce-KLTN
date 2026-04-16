@@ -211,7 +211,7 @@ class RLAutoscaler:
         # Update previous RPS for next iteration
         self.previous_rps = metrics.get("rps", 0.0) or 0.0
 
-        logger.info(f\"========== Iteration {self.iteration} [{DEPLOYMENT_NAME}] Complete ==========\")
+        logger.info(f"========== Iteration {self.iteration} [{DEPLOYMENT_NAME}] Complete ==========")
 
         return True
 
