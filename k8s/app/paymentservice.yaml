@@ -18,7 +18,7 @@ spec:
     spec:
       containers:
         - name: paymentservice
-          image: tangnhatdang/ecommerce-kltn-paymentservice:80ba9f0
+          image: tangnhatdang/ecommerce-kltn-paymentservice:0b42cf5
           ports:
             - containerPort: 50051
           env:
