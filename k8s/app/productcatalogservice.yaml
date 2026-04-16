@@ -4,6 +4,7 @@ metadata:
   name: productcatalogservice
   namespace: app
 spec:
+  revisionHistoryLimit: 3
   replicas: 1
   strategy:
     type: Recreate

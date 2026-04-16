@@ -9,6 +9,7 @@ metadata:
     app: rl-autoscaler
     target: apigateway
 spec:
+  revisionHistoryLimit: 3
   replicas: 1
   selector:
     matchLabels:
@@ -77,6 +78,7 @@ metadata:
     app: rl-autoscaler
     target: productcatalogservice
 spec:
+  revisionHistoryLimit: 3
   replicas: 1
   selector:
     matchLabels:
@@ -145,6 +147,7 @@ metadata:
     app: rl-autoscaler
     target: cartservice
 spec:
+  revisionHistoryLimit: 3
   replicas: 1
   selector:
     matchLabels:
