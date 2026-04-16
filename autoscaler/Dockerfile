@@ -19,7 +19,7 @@ RUN pip install --no-cache-dir \
 # Install rest of dependencies from requirements.txt
 # Using --no-deps to skip torch dependency (already installed above)
 # This prevents pip from trying to pull full GPU torch from default PyPI
-RUN pip install --no-cache-dir -r requirements.txt --no-deps
+RUN pip install --no-cache-dir -r requirements.txt 
 
 # Copy application code
 COPY config.py .
