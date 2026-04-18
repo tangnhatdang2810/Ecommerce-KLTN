@@ -57,16 +57,6 @@ spec:
               cpu: 500m
               memory: 512Mi
 
-          # Volume mounts for models
-          volumeMounts:
-            - name: models
-              mountPath: /app/models
-
-      # Volumes
-      volumes:
-        - name: models
-          emptyDir: {}
-
 ---
 # Autoscaler for productcatalogservice
 apiVersion: apps/v1
@@ -126,16 +116,6 @@ spec:
               cpu: 500m
               memory: 512Mi
 
-          # Volume mounts for models
-          volumeMounts:
-            - name: models
-              mountPath: /app/models
-
-      # Volumes
-      volumes:
-        - name: models
-          emptyDir: {}
-
 ---
 # Autoscaler for cartservice
 apiVersion: apps/v1
@@ -194,13 +174,3 @@ spec:
             limits:
               cpu: 500m
               memory: 512Mi
-
-          # Volume mounts for models
-          volumeMounts:
-            - name: models
-              mountPath: /app/models
-
-      # Volumes
-      volumes:
-        - name: models
-          emptyDir: {}
