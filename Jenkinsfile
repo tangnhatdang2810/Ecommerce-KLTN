@@ -203,12 +203,13 @@ pipeline {
 
                     // Add RL Autoscaler to batch
                     builds["Build autoscaler"] = {
-                        dir("autoscaler") {
-                            sh """
-                            docker build -t ${DOCKER_REGISTRY}/${IMAGE_PREFIX}-autoscaler:${env.GIT_COMMIT_SHORT} \
-                                         -t ${DOCKER_REGISTRY}/${IMAGE_PREFIX}-autoscaler:latest .
-                            """
-                        }
+                        sh """
+                        docker build \
+                          -f autoscaler/Dockerfile \
+                          -t ${DOCKER_REGISTRY}/${IMAGE_PREFIX}-autoscaler:${env.GIT_COMMIT_SHORT} \
+                          -t ${DOCKER_REGISTRY}/${IMAGE_PREFIX}-autoscaler:latest \
+                          autoscaler
+                        """
                     }
 
                     // ===== CHIA BATCH (3 JOBS SONG SONG) =====

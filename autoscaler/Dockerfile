@@ -32,5 +32,8 @@ COPY main.py .
 # Copy pre-trained RL models
 COPY models/ models/
 
+# DEBUG: Verify models were copied correctly
+RUN echo "===== DEBUG MODELS COPY ===== " && ls -lah /app/models/ && echo "===== DEBUG COMPLETE ====="
+
 # Run the application
 CMD ["python", "-u", "main.py"]
