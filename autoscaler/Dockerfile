@@ -14,7 +14,7 @@ COPY requirements.txt .
 # Using --index-url to get CPU-only build (~1.5-2GB instead of 3-4GB with CUDA)
 RUN pip install --no-cache-dir \
     --index-url https://download.pytorch.org/whl/cpu \
-    torch==2.0.1+cpu
+    torch==2.10.0+cpu
 
 # Install rest of dependencies from requirements.txt
 # Using --no-deps to skip torch dependency (already installed above)
