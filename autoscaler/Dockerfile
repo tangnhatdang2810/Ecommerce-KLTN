@@ -12,8 +12,10 @@ COPY requirements.txt .
 
 # Install torch from PyTorch official index FIRST
 # Using --index-url to get CPU-only build (~1.5-2GB instead of 3-4GB with CUDA)
+# Using --extra-index-url to allow fallback to PyPI for dependencies like typing-extensions
 RUN pip install --no-cache-dir \
     --index-url https://download.pytorch.org/whl/cpu \
+    --extra-index-url https://pypi.org/simple/ \
     torch==2.10.0+cpu
 
 # Install rest of dependencies from requirements.txt
