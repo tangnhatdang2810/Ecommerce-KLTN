@@ -26,7 +26,7 @@ spec:
 
       containers:
         - name: autoscaler
-          image: tangnhatdang/ecommerce-kltn-autoscaler:94e2c20
+          image: tangnhatdang/ecommerce-kltn-autoscaler:944c894
           imagePullPolicy: Always
 
           env:
@@ -85,7 +85,7 @@ spec:
 
       containers:
         - name: autoscaler
-          image: tangnhatdang/ecommerce-kltn-autoscaler:94e2c20
+          image: tangnhatdang/ecommerce-kltn-autoscaler:944c894
           imagePullPolicy: Always
 
           env:
@@ -144,7 +144,7 @@ spec:
 
       containers:
         - name: autoscaler
-          image: tangnhatdang/ecommerce-kltn-autoscaler:94e2c20
+          image: tangnhatdang/ecommerce-kltn-autoscaler:944c894
           imagePullPolicy: Always
 
           env:
