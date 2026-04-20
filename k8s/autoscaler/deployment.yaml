@@ -40,9 +40,9 @@ spec:
             - name: ALGO
               value: "ppo"
 
-            # Prometheus URL
+            # Prometheus URL (cross-namespace: monitoring-kube-prometheus-prometheus.monitoring)
             - name: PROM_URL
-              value: "http://prometheus:9090"
+              value: "http://monitoring-kube-prometheus-prometheus.monitoring:9090"
 
             # Logging level
             - name: LOG_LEVEL
@@ -99,9 +99,9 @@ spec:
             - name: ALGO
               value: "ppo"
 
-            # Prometheus URL
+            # Prometheus URL (cross-namespace: monitoring-kube-prometheus-prometheus.monitoring)
             - name: PROM_URL
-              value: "http://prometheus:9090"
+              value: "http://monitoring-kube-prometheus-prometheus.monitoring:9090"
 
             # Logging level
             - name: LOG_LEVEL
@@ -158,9 +158,9 @@ spec:
             - name: ALGO
               value: "ppo"
 
-            # Prometheus URL
+            # Prometheus URL (cross-namespace: monitoring-kube-prometheus-prometheus.monitoring)
             - name: PROM_URL
-              value: "http://prometheus:9090"
+              value: "http://monitoring-kube-prometheus-prometheus.monitoring:9090"
 
             # Logging level
             - name: LOG_LEVEL

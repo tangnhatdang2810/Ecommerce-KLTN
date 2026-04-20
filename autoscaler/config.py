@@ -23,7 +23,8 @@ ALGO = os.getenv("ALGO", "ppo")  # ppo or a2c
 MODEL_PATH = f"models/{ALGO}_k8s_autoscaler.zip"
 
 # Prometheus Configuration
-PROM_URL = os.getenv("PROM_URL", "http://prometheus:9090")
+# Using FQDN to access monitoring-kube-prometheus-prometheus from app namespace
+PROM_URL = os.getenv("PROM_URL", "http://monitoring-kube-prometheus-prometheus.monitoring:9090")
 PROM_QUERY_TIMEOUT = 10  # seconds
 
 # Metric Query Templates (built dynamically for target service)
