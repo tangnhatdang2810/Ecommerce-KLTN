@@ -7,6 +7,7 @@ pipeline {
         SONAR_HOME       = "/opt/sonar-scanner"
 
         TRIVY_CACHE_DIR  = "/opt/trivy-cache"
+        TRIVY_SHARED_DB  = "/opt/trivy-cache/shared"
         TMPDIR           = "/opt/tmp"
     }
 
@@ -134,8 +135,8 @@ pipeline {
             steps {
                 script {
                     def services = [
-                        'authservice', 'cartservice', 'checkoutservice', 
-                        'paymentservice', 'productcatalogservice', 
+                        'authservice', 'cartservice', 'checkoutservice',
+                        'paymentservice', 'productcatalogservice',
                         'shippingservice', 'apigateway'
                     ]
                     def jobs = [:]
@@ -179,7 +180,6 @@ pipeline {
         stage('Docker Build Images') {
             steps {
                 script {
-
                     def services = [
                         'authservice','cartservice','checkoutservice',
                         'paymentservice','productcatalogservice',
@@ -189,14 +189,9 @@ pipeline {
                     def builds = [:]
 
                     services.each { svc ->
-
                         def s = svc
-
                         builds["Build ${s}"] = {
-
-                            def image =
-                                "${DOCKER_REGISTRY}/${IMAGE_PREFIX}-${s}"
-
+                            def image = "${DOCKER_REGISTRY}/${IMAGE_PREFIX}-${s}"
                             dir("src/${s}") {
                                 sh """
                                 docker build \
@@ -214,33 +209,62 @@ pipeline {
 
     // =================================================
     // TRIVY SCAN (PARALLEL + OPTIMIZED)
+    // FIX: Download DB vào shared dir, copy sang từng
+    //      service-specific cache trước khi scan parallel
+    //      => tránh lock conflict khi nhiều job cùng lúc
+    //         cố ghi/đọc chung một cache directory.
     // =================================================
         stage('Trivy DB Warmup') {
             steps {
                 sh """
                 echo "===== TRIVY DB WARMUP ====="
 
-                mkdir -p ${TRIVY_CACHE_DIR}
+                # Tạo shared dir để download DB 1 lần duy nhất
+                mkdir -p ${TRIVY_SHARED_DB}
 
-                # Download Vulnerability DB
+                # Download Vulnerability DB vào shared dir
                 trivy image \
                     --download-db-only \
-                    --cache-dir ${TRIVY_CACHE_DIR}
+                    --cache-dir ${TRIVY_SHARED_DB} \
+                    --skip-version-check
 
-                # Download Java vulnerability DB
+                # Download Java vulnerability DB vào shared dir
                 trivy image \
                     --download-java-db-only \
-                    --cache-dir ${TRIVY_CACHE_DIR}
+                    --cache-dir ${TRIVY_SHARED_DB} \
+                    --skip-version-check
 
                 echo "===== TRIVY DB READY ====="
                 """
             }
         }
 
+        stage('Trivy Prepare Per-Service Cache') {
+            steps {
+                script {
+                    def services = [
+                        'authservice','cartservice','checkoutservice',
+                        'paymentservice','productcatalogservice',
+                        'shippingservice','apigateway','frontend'
+                    ]
+
+                    // Copy DB sang từng service cache dir (sequential, nhanh)
+                    // Mỗi service sẽ có DB riêng => không tranh lock khi scan parallel
+                    services.each { svc ->
+                        sh """
+                        mkdir -p ${TRIVY_CACHE_DIR}/${svc}
+                        cp -r ${TRIVY_SHARED_DB}/db      ${TRIVY_CACHE_DIR}/${svc}/ 2>/dev/null || true
+                        cp -r ${TRIVY_SHARED_DB}/java-db  ${TRIVY_CACHE_DIR}/${svc}/ 2>/dev/null || true
+                        echo "Cache ready for ${svc}"
+                        """
+                    }
+                }
+            }
+        }
+
         stage('Trivy Scan Docker Images') {
             steps {
                 script {
-
                     def services = [
                         'authservice','cartservice','checkoutservice',
                         'paymentservice','productcatalogservice',
@@ -251,35 +275,31 @@ pipeline {
 
                     services.each { svc ->
                         scans["Scan ${svc}"] = {
-                            def image = "${DOCKER_REGISTRY}/${IMAGE_PREFIX}-${svc}:${env.GIT_COMMIT_SHORT}"
+                            def image        = "${DOCKER_REGISTRY}/${IMAGE_PREFIX}-${svc}:${env.GIT_COMMIT_SHORT}"
                             def SERVICE_CACHE = "${TRIVY_CACHE_DIR}/${svc}"
 
                             sh """
-                            mkdir -p ${SERVICE_CACHE}
                             trivy image \
-                                --cache-dir ${SERVICE_CACHE} \
+                                --cache-dir    ${SERVICE_CACHE} \
                                 --skip-db-update \
-                                --scanners vuln \
-                                --severity HIGH,CRITICAL \
-                                --exit-code 0 \
-                                --format table \
+                                --skip-version-check \
+                                --scanners     vuln \
+                                --severity     HIGH,CRITICAL \
+                                --exit-code    0 \
+                                --format       table \
                                 ${image}
                             """
                         }
                     }
 
-                    def keys = scans.keySet().toList()
+                    // Scan theo batch 3 để tránh quá tải I/O
+                    def keys      = scans.keySet().toList()
                     def batchSize = 3
 
                     for (int i = 0; i < keys.size(); i += batchSize) {
-
                         def batch = [:]
-
                         keys.subList(i, Math.min(i + batchSize, keys.size()))
-                            .each { k ->
-                                batch[k] = scans[k]
-                            }
-
+                            .each { k -> batch[k] = scans[k] }
                         parallel batch
                     }
                 }
@@ -292,7 +312,6 @@ pipeline {
         stage('Push Images') {
             steps {
                 script {
-
                     def services = [
                         'authservice','cartservice','checkoutservice',
                         'paymentservice','productcatalogservice',
@@ -304,20 +323,14 @@ pipeline {
                         usernameVariable: 'DOCKER_USER',
                         passwordVariable: 'DOCKER_PASS'
                     )]) {
-
                         sh 'echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin'
 
                         def jobs = [:]
 
                         services.each { svc ->
-
                             def s = svc
-
                             jobs["Push ${s}"] = {
-
-                                def image =
-                                    "${DOCKER_REGISTRY}/${IMAGE_PREFIX}-${s}"
-
+                                def image = "${DOCKER_REGISTRY}/${IMAGE_PREFIX}-${s}"
                                 sh """
                                 docker push ${image}:${env.GIT_COMMIT_SHORT}
                                 docker push ${image}:latest
@@ -332,12 +345,11 @@ pipeline {
         }
 
     // =================================================
-    // UPDATE K8S MANIFESTS (CD - BỎ QUA THEO YÊU CẦU)
+    // UPDATE K8S MANIFESTS
     // =================================================
         stage('Update K8s Manifests') {
             steps {
                 script {
-
                     def services = [
                         'authservice','cartservice','checkoutservice',
                         'paymentservice','productcatalogservice',
@@ -364,7 +376,7 @@ pipeline {
                 }
             }
         }
-        
+
     // =================================================
     // DAST - OWASP ZAP (Uncomment khi cần)
     // =================================================
@@ -380,8 +392,15 @@ pipeline {
         always {
             sh '''
             echo "===== CLEAN DOCKER ====="
-            docker system prune -af || true
+            docker system prune -af  || true
             docker builder prune -af || true
+
+            echo "===== CLEAN TRIVY PER-SERVICE CACHE ====="
+            # Xóa service-specific cache dirs, giữ lại shared DB
+            # để build tiếp theo có thể reuse nếu cần
+            for svc in authservice cartservice checkoutservice paymentservice productcatalogservice shippingservice apigateway frontend; do
+                rm -rf /opt/trivy-cache/${svc} || true
+            done
 
             echo "===== CLEAN TMP ====="
             rm -rf /tmp/trivy-* || true
