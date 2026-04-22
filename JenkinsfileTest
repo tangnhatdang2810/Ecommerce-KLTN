@@ -209,10 +209,6 @@ pipeline {
 
     // =================================================
     // TRIVY SCAN (PARALLEL + OPTIMIZED)
-    // FIX: Download DB vào shared dir, copy sang từng
-    //      service-specific cache trước khi scan parallel
-    //      => tránh lock conflict khi nhiều job cùng lúc
-    //         cố ghi/đọc chung một cache directory.
     // =================================================
         stage('Trivy DB Warmup') {
             steps {
@@ -248,8 +244,6 @@ pipeline {
                         'shippingservice','apigateway','frontend'
                     ]
 
-                    // Copy DB sang từng service cache dir (sequential, nhanh)
-                    // Mỗi service sẽ có DB riêng => không tranh lock khi scan parallel
                     services.each { svc ->
                         sh """
                         mkdir -p ${TRIVY_CACHE_DIR}/${svc}
