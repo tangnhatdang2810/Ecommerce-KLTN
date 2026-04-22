@@ -250,17 +250,14 @@ pipeline {
                     def scans = [:]
 
                     services.each { svc ->
-
                         scans["Scan ${svc}"] = {
-
-                            def image =
-                                "${DOCKER_REGISTRY}/${IMAGE_PREFIX}-${svc}:${env.GIT_COMMIT_SHORT}"
+                            def image = "${DOCKER_REGISTRY}/${IMAGE_PREFIX}-${svc}:${env.GIT_COMMIT_SHORT}"
+                            def SERVICE_CACHE = "${TRIVY_CACHE_DIR}/${svc}"
 
                             sh """
-                            echo "===== TRIVY SCAN ${svc} ====="
-
+                            mkdir -p ${SERVICE_CACHE}
                             trivy image \
-                                --cache-dir ${TRIVY_CACHE_DIR} \
+                                --cache-dir ${SERVICE_CACHE} \
                                 --skip-db-update \
                                 --scanners vuln \
                                 --severity HIGH,CRITICAL \
