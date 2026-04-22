@@ -369,7 +369,9 @@ pipeline {
                         git config user.name "jenkins"
 
                         git add k8s/
+                        git diff --cached --quiet && echo "No changes to commit" || \
                         git commit -m "Update image tag to ${env.GIT_COMMIT_SHORT}"
+
                         git push origin main
                         """
                     }
