@@ -13,7 +13,7 @@ DEPLOYMENT_NAME = TARGET_DEPLOYMENT
 
 # Scaling Constraints
 MIN_REPLICAS = 1
-MAX_REPLICAS = 3
+MAX_REPLICAS = 5
 
 # Cooldown period (seconds)
 COOLDOWN_SECONDS = 60
@@ -43,7 +43,7 @@ NORMALIZATION = {
     "cpu": 110.0,
     "memory": 81.1,
     "latency": 885.0,
-    "replicas": 3.0,  # Runtime max (training was 10)
+    "replicas": 5.0,  # Runtime max (training was 10)
 }
 
 # Logging level
