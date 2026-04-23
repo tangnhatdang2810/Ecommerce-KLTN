@@ -3,7 +3,7 @@
 import requests
 import logging
 from typing import Dict, Optional
-from config import PROM_URL, METRIC_QUERIES, PROM_QUERY_TIMEOUT, TARGET_SERVICE, TARGET_DEPLOYMENT
+from config import PROM_URL, PROM_QUERY_TIMEOUT
 
 logger = logging.getLogger(__name__)
 
@@ -11,32 +11,25 @@ logger = logging.getLogger(__name__)
 class PrometheusClient:
     """Client for querying Prometheus metrics."""
 
-    def __init__(self, base_url: str = PROM_URL, target_service: str = TARGET_SERVICE):
+    def __init__(self, base_url: str = PROM_URL):
         """Initialize Prometheus client.
 
         Args:
             base_url: Prometheus endpoint URL
-            target_service: Target service name for filtering metrics
         """
         self.base_url = base_url
         self.query_endpoint = f"{base_url}/api/v1/query"
-        self.target_service = target_service
 
-    def query_metric(self, metric_name: str) -> Optional[float]:
+    def query_metric(self, metric_name: str, query: str) -> Optional[float]:
         """Query a single metric from Prometheus.
 
         Args:
-            metric_name: Name of the metric (key in METRIC_QUERIES)
+            metric_name: Name of the metric (for logging)
+            query: Prometheus PromQL query string
 
         Returns:
             Metric value as float, or None if query fails
         """
-        if metric_name not in METRIC_QUERIES:
-            logger.warning(f"Unknown metric: {metric_name}")
-            return None
-
-        query = METRIC_QUERIES[metric_name]
-
         try:
             response = requests.get(
                 self.query_endpoint,
@@ -47,7 +40,7 @@ class PrometheusClient:
 
             data = response.json()
             if data.get("status") != "success":
-                logger.error(f"Prometheus error: {data.get('error', 'Unknown error')}")
+                logger.error(f"Prometheus error for {metric_name}: {data.get('error', 'Unknown error')}")
                 return None
 
             results = data.get("data", {}).get("result", [])
@@ -78,18 +71,6 @@ class PrometheusClient:
         except Exception as e:
             logger.error(f"Unexpected error querying {metric_name}: {e}")
             return None
-
-    def query_all_metrics(self) -> Dict[str, Optional[float]]:
-        """Query all metrics at once.
-
-        Returns:
-            Dictionary with metric names as keys and values (or None if failed)
-        """
-        metrics = {}
-        for metric_name in METRIC_QUERIES.keys():
-            metrics[metric_name] = self.query_metric(metric_name)
-
-        return metrics
 
     def health_check(self) -> bool:
         """Check if Prometheus is healthy.

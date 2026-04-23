@@ -1,21 +1,20 @@
-"""Main entry point for RL Kubernetes autoscaler."""
+"""Main entry point for centralized multi-service RL Kubernetes autoscaler."""
 
 import logging
 import sys
 import time
-from typing import Optional
+from typing import Optional, Dict
 import numpy as np
 
 from config import (
     NAMESPACE,
-    DEPLOYMENT_NAME,
-    TARGET_DEPLOYMENT,
-    TARGET_SERVICE,
+    TARGET_SERVICES,
     COOLDOWN_SECONDS,
     MODEL_PATH,
     MIN_REPLICAS,
     MAX_REPLICAS,
     LOG_LEVEL,
+    build_metric_queries,
 )
 from prometheus_client import PrometheusClient
 from scaler import KubernetesScaler
@@ -31,20 +30,39 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+class ServiceState:
+    """State tracking for a single service."""
+
+    def __init__(self, service_name: str, deployment_name: str):
+        """Initialize service state.
+        
+        Args:
+            service_name: Service name (for HTTP metrics)
+            deployment_name: Deployment name (for pod selectors)
+        """
+        self.service_name = service_name
+        self.deployment_name = deployment_name
+        self.previous_rps = 0.0
+        self.last_scale_time = 0
+        self.iteration = 0
+        # Build metric queries specific to this service
+        self.metric_queries = build_metric_queries(service_name, deployment_name)
+
+
 class RLAutoscaler:
-    """RL-based Kubernetes autoscaler."""
+    """Centralized multi-service RL-based Kubernetes autoscaler."""
 
     def __init__(self):
         """Initialize autoscaler components."""
-        logger.info("Initializing RL Autoscaler...")
+        logger.info("Initializing Centralized Multi-Service RL Autoscaler...")
 
-        # Initialize Prometheus client
+        # Initialize Prometheus client (shared)
         self.prom_client = PrometheusClient()
 
-        # Initialize Kubernetes scaler
-        self.k8s_scaler = KubernetesScaler(NAMESPACE, DEPLOYMENT_NAME)
+        # Initialize Kubernetes scaler (shared)
+        self.k8s_scaler = KubernetesScaler(NAMESPACE, None)
 
-        # Load RL model
+        # Load RL model (shared)
         try:
             self.model = RLModel(MODEL_PATH)
             logger.info(f"RL Model loaded: {self.model}")
@@ -52,33 +70,51 @@ class RLAutoscaler:
             logger.error(f"Failed to load RL model: {e}")
             raise
 
-        # State tracking
-        self.previous_rps = 0.0
-        self.last_scale_time = 0
-        self.iteration = 0
+        # Initialize per-service states
+        self.service_states: Dict[str, ServiceState] = {}
+        for service in TARGET_SERVICES:
+            self.service_states[service] = ServiceState(service, service)
 
-        logger.info("RL Autoscaler initialized successfully")
+        self.global_iteration = 0
 
-    def collect_metrics(self) -> Optional[dict]:
-        """Collect metrics from Prometheus.
+        logger.info(
+            f"RL Autoscaler initialized successfully for services: {TARGET_SERVICES}"
+        )
+
+    def collect_service_metrics(self, service: ServiceState) -> Optional[dict]:
+        """Collect metrics from Prometheus for a specific service.
+
+        Args:
+            service: Service state object with metric queries
 
         Returns:
             Dict with metrics, or None if collection failed
         """
-        metrics = self.prom_client.query_all_metrics()
+        metrics = {}
+        
+        for metric_name, query in service.metric_queries.items():
+            try:
+                value = self.prom_client.query_metric(metric_name, query)
+                metrics[metric_name] = value
+            except Exception as e:
+                logger.warning(f"[{service.service_name}] Failed to query {metric_name}: {e}")
+                metrics[metric_name] = None
 
         # Check if we have valid data
         if not all(v is not None for v in metrics.values()):
-            logger.warning(f"Some metrics are missing: {metrics}")
+            logger.warning(
+                f"[{service.service_name}] Some metrics are missing: {metrics}"
+            )
 
         return metrics
 
     def make_scaling_decision(
-        self, metrics: dict, current_replicas: int
+        self, service: ServiceState, metrics: dict, current_replicas: int
     ) -> tuple[int, str, dict]:
-        """Use RL model to make scaling decision.
+        """Use RL model to make scaling decision for a service.
 
         Args:
+            service: Service state object
             metrics: Collected metrics
             current_replicas: Current replica count
 
@@ -86,10 +122,12 @@ class RLAutoscaler:
             Tuple of (target_replicas, action_name, normalized_state_dict)
         """
         try:
-            # Normalize metrics
-            state, normalized = normalize_metrics(metrics, self.previous_rps)
+            # Normalize metrics using service's previous_rps
+            state, normalized = normalize_metrics(metrics, service.previous_rps)
 
-            logger.debug(f"Normalized state: {normalized}")
+            logger.debug(
+                f"[{service.service_name}] Normalized state: {normalized}"
+            )
 
             # Get action from RL model
             action, _ = self.model.predict(state, deterministic=True)
@@ -102,27 +140,35 @@ class RLAutoscaler:
             return target_replicas, action_name, normalized
 
         except Exception as e:
-            logger.error(f"Failed to make scaling decision: {e}")
+            logger.error(
+                f"[{service.service_name}] Failed to make scaling decision: {e}"
+            )
             return current_replicas, "ERROR", {}
 
-    def should_cooldown(self) -> bool:
-        """Check if in cooldown period.
+    def should_cooldown(self, service: ServiceState) -> bool:
+        """Check if service is in cooldown period.
+
+        Args:
+            service: Service state object
 
         Returns:
             True if in cooldown, False otherwise
         """
-        elapsed = time.time() - self.last_scale_time
+        elapsed = time.time() - service.last_scale_time
         if elapsed < COOLDOWN_SECONDS:
             logger.info(
-                f"In cooldown period: {COOLDOWN_SECONDS - elapsed:.1f}s remaining"
+                f"[{service.service_name}] In cooldown: {COOLDOWN_SECONDS - elapsed:.1f}s remaining"
             )
             return True
         return False
 
-    def execute_scaling(self, target_replicas: int, current_replicas: int) -> bool:
-        """Execute scaling action if needed.
+    def execute_scaling(
+        self, service: ServiceState, target_replicas: int, current_replicas: int
+    ) -> bool:
+        """Execute scaling action for a service if needed.
 
         Args:
+            service: Service state object
             target_replicas: Target replica count
             current_replicas: Current replica count
 
@@ -130,65 +176,78 @@ class RLAutoscaler:
             True if scaling executed or not needed
         """
         if target_replicas == current_replicas:
-            logger.info("No scaling needed (target equals current)")
+            logger.debug(
+                f"[{service.service_name}] No scaling needed (target equals current)"
+            )
             return True
 
-        if self.should_cooldown():
+        if self.should_cooldown(service):
             return False
 
         # Execute scaling
-        success = self.k8s_scaler.scale_deployment(target_replicas)
+        success = self.k8s_scaler.scale_deployment(
+            service.deployment_name, target_replicas
+        )
 
         if success:
-            self.last_scale_time = time.time()
+            service.last_scale_time = time.time()
             return True
 
         return False
 
-    def run_loop_iteration(self) -> bool:
-        """Run one iteration of the autoscaler loop.
+    def process_service(self, service: ServiceState) -> bool:
+        """Process one service: collect metrics, decide, and execute scaling.
+
+        Args:
+            service: Service state object
 
         Returns:
-            True if iteration succeeded, False if critical error
+            True if processing succeeded, False if critical error
         """
-        self.iteration += 1
+        service.iteration += 1
 
-        logger.info(f"========== Iteration {self.iteration} [{DEPLOYMENT_NAME}] ==========")
+        logger.info(
+            f"========== Iteration {service.iteration} [{service.service_name}] =========="
+        )
 
         # Get current replicas
-        current_replicas = self.k8s_scaler.get_replicas()
+        current_replicas = self.k8s_scaler.get_replicas(service.deployment_name)
         if current_replicas is None:
-            logger.error(f"[{DEPLOYMENT_NAME}] Failed to get current replicas")
+            logger.error(
+                f"[{service.service_name}] Failed to get current replicas"
+            )
             return False
 
         # Collect metrics
-        metrics = self.collect_metrics()
+        metrics = self.collect_service_metrics(service)
         if metrics is None:
-            logger.error("Failed to collect metrics")
+            logger.error(f"[{service.service_name}] Failed to collect metrics")
             return False
 
         # Log raw metrics
         logger.info(
-            f"[{DEPLOYMENT_NAME}] Raw metrics - RPS: {metrics.get('rps'):.2f}, CPU: {metrics.get('cpu'):.2f}, "
+            f"[{service.service_name}] Raw metrics - "
+            f"RPS: {metrics.get('rps'):.2f}, CPU: {metrics.get('cpu'):.2f}, "
             f"Memory: {metrics.get('memory'):.3f}, Latency: {metrics.get('latency'):.2f}ms, "
             f"Replicas: {int(metrics.get('replicas', 0)) if metrics.get('replicas') else 'N/A'}"
         )
 
         # Make scaling decision
         target_replicas, action_name, normalized = self.make_scaling_decision(
-            metrics, current_replicas
+            service, metrics, current_replicas
         )
 
         # Log decision
         logger.info(
-            f"[{DEPLOYMENT_NAME}] RL Decision - Action: {action_name}, Current: {current_replicas}, "
-            f"Target: {target_replicas}"
+            f"[{service.service_name}] RL Decision - Action: {action_name}, "
+            f"Current: {current_replicas}, Target: {target_replicas}"
         )
 
         # Log normalized state
         if normalized:
             logger.info(
-                f"[{DEPLOYMENT_NAME}] Normalized State - RPS_norm: {normalized.get('rps_norm'):.3f}, "
+                f"[{service.service_name}] Normalized State - "
+                f"RPS_norm: {normalized.get('rps_norm'):.3f}, "
                 f"CPU_norm: {normalized.get('cpu_norm'):.3f}, "
                 f"Memory_norm: {normalized.get('memory_norm'):.3f}, "
                 f"Latency_norm: {normalized.get('latency_norm'):.3f}, "
@@ -197,31 +256,70 @@ class RLAutoscaler:
             )
 
         # Execute scaling if needed
-        if self.execute_scaling(target_replicas, current_replicas):
-            action_symbol = "↑" if target_replicas > current_replicas else "↓" if target_replicas < current_replicas else "→"
+        if self.execute_scaling(service, target_replicas, current_replicas):
+            action_symbol = (
+                "↑" if target_replicas > current_replicas
+                else "↓" if target_replicas < current_replicas
+                else "→"
+            )
             logger.info(
-                f"[{DEPLOYMENT_NAME}] 🎯 Action={action_name} {action_symbol} "
+                f"[{service.service_name}] 🎯 Action={action_name} {action_symbol} "
                 f"Replicas: {current_replicas}→{target_replicas} ✅ SCALED"
             )
         else:
             logger.info(
-                f"[{DEPLOYMENT_NAME}] Action={action_name} - No scaling (cooldown or no change needed)"
+                f"[{service.service_name}] Action={action_name} - "
+                f"No scaling (cooldown or no change needed)"
             )
 
         # Update previous RPS for next iteration
-        self.previous_rps = metrics.get("rps", 0.0) or 0.0
+        service.previous_rps = metrics.get("rps", 0.0) or 0.0
 
-        logger.info(f"========== Iteration {self.iteration} [{DEPLOYMENT_NAME}] Complete ==========")
+        logger.info(
+            f"========== Iteration {service.iteration} [{service.service_name}] Complete =========="
+        )
 
         return True
 
-    def run(self, interval: int = 30):
+    def run_loop_iteration(self) -> bool:
+        """Run one full iteration for all services.
+
+        Returns:
+            True if iteration succeeded, False if critical error
+        """
+        self.global_iteration += 1
+        logger.info(f"\n{'='*80}")
+        logger.info(f"Global Iteration {self.global_iteration} - Processing {len(TARGET_SERVICES)} services")
+        logger.info(f"{'='*80}\n")
+
+        all_succeeded = True
+        for service_name in TARGET_SERVICES:
+            service = self.service_states[service_name]
+            try:
+                success = self.process_service(service)
+                if not success:
+                    logger.error(
+                        f"[{service_name}] Processing failed, continuing with next service..."
+                    )
+                    all_succeeded = False
+            except Exception as e:
+                logger.error(
+                    f"[{service_name}] Unexpected error: {e}", exc_info=True
+                )
+                all_succeeded = False
+
+        return all_succeeded
+
+    def run(self, interval: int = 15):
         """Run autoscaler continuously.
 
         Args:
-            interval: Seconds between each iteration
+            interval: Seconds between each global iteration
         """
-        logger.info(f"Starting RL Autoscaler (interval={interval}s)...")
+        logger.info(
+            f"Starting Centralized RL Autoscaler for {len(TARGET_SERVICES)} services (interval={interval}s)..."
+        )
+        logger.info(f"Services: {TARGET_SERVICES}")
 
         # Check Prometheus health first
         if not self.prom_client.health_check():
@@ -232,7 +330,7 @@ class RLAutoscaler:
                 try:
                     success = self.run_loop_iteration()
                     if not success:
-                        logger.error("Iteration failed, retrying...")
+                        logger.error("Iteration had errors, retrying...")
 
                 except Exception as e:
                     logger.error(f"Unexpected error in loop: {e}", exc_info=True)
@@ -256,6 +354,10 @@ def main():
     except Exception as e:
         logger.error(f"Failed to start autoscaler: {e}", exc_info=True)
         sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
 
 
 if __name__ == "__main__":

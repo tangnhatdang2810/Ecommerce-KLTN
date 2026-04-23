@@ -5,17 +5,14 @@ import os
 # Kubernetes Configuration
 NAMESPACE = "app"
 
-# Dynamic Target Configuration (from environment variables)
-TARGET_DEPLOYMENT = os.getenv("TARGET_DEPLOYMENT", "apigateway")
-TARGET_SERVICE = os.getenv("TARGET_SERVICE", TARGET_DEPLOYMENT)
-
-DEPLOYMENT_NAME = TARGET_DEPLOYMENT
+# Multi-service Configuration
+TARGET_SERVICES = ["apigateway", "productcatalogservice", "cartservice"]
 
 # Scaling Constraints
 MIN_REPLICAS = 1
 MAX_REPLICAS = 5
 
-# Cooldown period (seconds)
+# Cooldown period (seconds) - per service
 COOLDOWN_SECONDS = 60
 
 # RL Model Configuration
@@ -27,15 +24,24 @@ MODEL_PATH = f"models/{ALGO}_k8s_autoscaler.zip"
 PROM_URL = os.getenv("PROM_URL", "http://monitoring-kube-prometheus-prometheus.monitoring:9090")
 PROM_QUERY_TIMEOUT = 10  # seconds
 
-# Metric Query Templates (built dynamically for target service)
-# Note: Queries are filtered by TARGET_DEPLOYMENT pod selector
-METRIC_QUERIES = {
-    "rps": f'sum(rate(http_server_requests_seconds_count{{namespace="app", service="{TARGET_SERVICE}"}}[1m]))',
-    "cpu": f'sum(rate(container_cpu_usage_seconds_total{{namespace="app", pod=~"{TARGET_DEPLOYMENT}.*"}}[1m]))',
-    "memory": f'sum(container_memory_working_set_bytes{{namespace="app", pod=~"{TARGET_DEPLOYMENT}.*", container!="", image!=""}}) / sum(kube_pod_container_resource_requests{{namespace="app", pod=~"{TARGET_DEPLOYMENT}.*", resource="memory", unit="byte"}})',
-    "latency": f'1000 * histogram_quantile(0.95, sum by (le) (rate(http_server_requests_seconds_bucket{{namespace="app", service="{TARGET_SERVICE}"}}[1m])))',
-    "replicas": f'kube_deployment_status_replicas{{namespace="app", deployment="{TARGET_DEPLOYMENT}"}}',
-}
+# Helper function to build metric queries for a specific service
+def build_metric_queries(service_name: str, deployment_name: str) -> dict:
+    """Build metric queries for a specific service.
+    
+    Args:
+        service_name: Service name for HTTP metrics (e.g., "apigateway")
+        deployment_name: Deployment name for pod selectors (e.g., "apigateway")
+    
+    Returns:
+        Dict with Prometheus queries for this service
+    """
+    return {
+        "rps": f'sum(rate(http_server_requests_seconds_count{{namespace="app", service="{service_name}"}}[1m]))',
+        "cpu": f'sum(rate(container_cpu_usage_seconds_total{{namespace="app", pod=~"{deployment_name}.*"}}[1m]))',
+        "memory": f'sum(container_memory_working_set_bytes{{namespace="app", pod=~"{deployment_name}.*", container!="", image!=""}}) / sum(kube_pod_container_resource_requests{{namespace="app", pod=~"{deployment_name}.*", resource="memory", unit="byte"}})',
+        "latency": f'1000 * histogram_quantile(0.95, sum by (le) (rate(http_server_requests_seconds_bucket{{namespace="app", service="{service_name}"}}[1m])))',
+        "replicas": f'kube_deployment_status_replicas{{namespace="app", deployment="{deployment_name}"}}',
+    }
 
 # Normalization Constants (from training - DO NOT MODIFY)
 NORMALIZATION = {
@@ -43,7 +49,7 @@ NORMALIZATION = {
     "cpu": 110.0,
     "memory": 81.1,
     "latency": 885.0,
-    "replicas": 5.0,  # Runtime max (training was 10)
+    "replicas": 5.0,  # Runtime max
 }
 
 # Logging level

@@ -1,159 +1,33 @@
 ---
-# Autoscaler for apigateway
+# Centralized Multi-Service RL Autoscaler
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: rl-autoscaler-apigateway
+  name: rl-autoscaler
   namespace: app
   labels:
     app: rl-autoscaler
-    target: apigateway
+    version: centralized
 spec:
   revisionHistoryLimit: 3
   replicas: 1
   selector:
     matchLabels:
       app: rl-autoscaler
-      target: apigateway
   template:
     metadata:
       labels:
         app: rl-autoscaler
-        target: apigateway
     spec:
       serviceAccountName: rl-autoscaler
       restartPolicy: Always
 
       containers:
         - name: autoscaler
-          image: tangnhatdang/ecommerce-kltn-autoscaler:5dcbb38
+          image: tangnhatdang/ecommerce-kltn-autoscaler:latest
           imagePullPolicy: Always
 
           env:
-            # Target deployment to scale
-            - name: TARGET_DEPLOYMENT
-              value: "apigateway"
-            - name: TARGET_SERVICE
-              value: "apigateway"
-
-            # Algorithm: ppo or a2c
-            - name: ALGO
-              value: "ppo"
-
-            # Prometheus URL (cross-namespace: monitoring-kube-prometheus-prometheus.monitoring)
-            - name: PROM_URL
-              value: "http://monitoring-kube-prometheus-prometheus.monitoring:9090"
-
-            # Logging level
-            - name: LOG_LEVEL
-              value: "INFO"
-
-          # Resource limits
-          resources:
-            requests:
-              cpu: 100m
-              memory: 256Mi
-            limits:
-              cpu: 500m
-              memory: 512Mi
-
----
-# Autoscaler for productcatalogservice
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: rl-autoscaler-productcatalog
-  namespace: app
-  labels:
-    app: rl-autoscaler
-    target: productcatalogservice
-spec:
-  revisionHistoryLimit: 3
-  replicas: 1
-  selector:
-    matchLabels:
-      app: rl-autoscaler
-      target: productcatalogservice
-  template:
-    metadata:
-      labels:
-        app: rl-autoscaler
-        target: productcatalogservice
-    spec:
-      serviceAccountName: rl-autoscaler
-      restartPolicy: Always
-
-      containers:
-        - name: autoscaler
-          image: tangnhatdang/ecommerce-kltn-autoscaler:5dcbb38
-          imagePullPolicy: Always
-
-          env:
-            # Target deployment to scale
-            - name: TARGET_DEPLOYMENT
-              value: "productcatalogservice"
-            - name: TARGET_SERVICE
-              value: "productcatalogservice"
-
-            # Algorithm: ppo or a2c
-            - name: ALGO
-              value: "ppo"
-
-            # Prometheus URL (cross-namespace: monitoring-kube-prometheus-prometheus.monitoring)
-            - name: PROM_URL
-              value: "http://monitoring-kube-prometheus-prometheus.monitoring:9090"
-
-            # Logging level
-            - name: LOG_LEVEL
-              value: "INFO"
-
-          # Resource limits
-          resources:
-            requests:
-              cpu: 100m
-              memory: 256Mi
-            limits:
-              cpu: 500m
-              memory: 512Mi
-
----
-# Autoscaler for cartservice
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: rl-autoscaler-cart
-  namespace: app
-  labels:
-    app: rl-autoscaler
-    target: cartservice
-spec:
-  revisionHistoryLimit: 3
-  replicas: 1
-  selector:
-    matchLabels:
-      app: rl-autoscaler
-      target: cartservice
-  template:
-    metadata:
-      labels:
-        app: rl-autoscaler
-        target: cartservice
-    spec:
-      serviceAccountName: rl-autoscaler
-      restartPolicy: Always
-
-      containers:
-        - name: autoscaler
-          image: tangnhatdang/ecommerce-kltn-autoscaler:5dcbb38
-          imagePullPolicy: Always
-
-          env:
-            # Target deployment to scale
-            - name: TARGET_DEPLOYMENT
-              value: "cartservice"
-            - name: TARGET_SERVICE
-              value: "cartservice"
-
             # Algorithm: ppo or a2c
             - name: ALGO
               value: "ppo"
