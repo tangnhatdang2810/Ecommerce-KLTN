@@ -26,3 +26,15 @@ obj/
 pkg/
 release/wi-kubernetes-manifests.yaml
 vendor/
+
+# ---- Build outputs under src/ (Java services) ----
+/src/**/target/
+
+# Common Java build artifacts (extra safety)
+*.class
+*.jar
+*.war
+*.ear
+
+# Logs
+*.log
