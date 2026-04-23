@@ -186,7 +186,7 @@ class RLAutoscaler:
 
         # Execute scaling
         success = self.k8s_scaler.scale_deployment(
-            service.deployment_name, target_replicas
+            target_replicas, service.deployment_name
         )
 
         if success:
