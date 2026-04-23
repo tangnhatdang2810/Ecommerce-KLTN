@@ -18,7 +18,7 @@ spec:
     spec:
       containers:
         - name: cartservice
-          image: tangnhatdang/ecommerce-kltn-cartservice:5dcbb38
+          image: tangnhatdang/ecommerce-kltn-cartservice:5032f0b
           ports:
             - containerPort: 7070
           env:
