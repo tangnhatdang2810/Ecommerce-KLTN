@@ -42,7 +42,7 @@ def normalize_metrics(
     latency_norm = latency / NORMALIZATION["latency"]
     normalized["latency_norm"] = float(np.clip(latency_norm, 0, 1))
 
-    # Replicas normalization (runtime max = 8)
+    # Replicas normalization (runtime max = 7)
     replicas = metrics.get("replicas", 1.0) or 1.0
     replicas_norm = replicas / NORMALIZATION["replicas"]
     normalized["replicas_norm"] = float(np.clip(replicas_norm, 0, 1))
