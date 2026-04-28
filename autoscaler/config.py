@@ -10,10 +10,19 @@ TARGET_SERVICES = ["apigateway", "productcatalogservice", "cartservice"]
 
 # Scaling Constraints
 MIN_REPLICAS = 1
-MAX_REPLICAS = 5
+MAX_REPLICAS = 10  # Increased for better load handling
 
-# Cooldown period (seconds) - per service
-COOLDOWN_SECONDS = 60
+# Directional Cooldown (RL-aware)
+COOLDOWN_SCALE_UP = 15    # Short cooldown for scale-up (responsive to load spike)
+COOLDOWN_SCALE_DOWN = 60  # Long cooldown for scale-down (avoid flapping)
+
+# Emergency Detection Thresholds
+LATENCY_CRITICAL = 500    # ms - bypass cooldown when latency exceeds this
+RPS_SPIKE_PERCENT = 50    # % - RPS increase threshold
+
+# Adaptive Scaling
+ADAPTIVE_STEP = True      # Enable multi-step scaling based on normalized metrics
+COOLDOWN_SECONDS = 60     # Legacy: kept for compatibility
 
 # RL Model Configuration
 ALGO = os.getenv("ALGO", "ppo")  # ppo or a2c
@@ -43,13 +52,13 @@ def build_metric_queries(service_name: str, deployment_name: str) -> dict:
         "replicas": f'kube_deployment_status_replicas{{namespace="app", deployment="{deployment_name}"}}',
     }
 
-# Normalization Constants (from training - DO NOT MODIFY)
+# Normalization Constants (updated for MAX_REPLICAS=10)
 NORMALIZATION = {
     "rps": 99.7,
     "cpu": 110.0,
     "memory": 81.1,
     "latency": 885.0,
-    "replicas": 5.0,  # Runtime max
+    "replicas": 10.0,  # Updated: Runtime max = 10
 }
 
 # Logging level
