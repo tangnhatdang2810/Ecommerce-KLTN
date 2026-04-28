@@ -291,20 +291,11 @@ pipeline {
                         }
                     }
 
-                    // ===== CHIA BATCH (3 JOB SONG SONG) =====
-                    def keys = scans.keySet().toList()
-                    def batchSize = 3
-
-                    for (int i = 0; i < keys.size(); i += batchSize) {
-
-                        def batch = [:]
-
-                        keys.subList(i, Math.min(i + batchSize, keys.size()))
-                            .each { k ->
-                                batch[k] = scans[k]
-                            }
-
-                        parallel batch
+                    // ===== SCAN TUẦN TỰ (SEQUENTIAL) =====
+                    scans.each { name, scanBlock ->
+                        echo "Starting: ${name}"
+                        scanBlock()
+                        echo "Completed: ${name}"
                     }
                 }
             }
