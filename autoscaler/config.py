@@ -10,7 +10,7 @@ TARGET_SERVICES = ["apigateway", "productcatalogservice", "cartservice"]
 
 # Scaling Constraints
 MIN_REPLICAS = 1
-MAX_REPLICAS = 7  # Maximum replicas per service
+MAX_REPLICAS = 8  # Maximum replicas per service
 
 # Directional Cooldown (RL-aware)
 COOLDOWN_SCALE_UP = 15    # Short cooldown for scale-up (responsive to load spike)
@@ -52,13 +52,13 @@ def build_metric_queries(service_name: str, deployment_name: str) -> dict:
         "replicas": f'kube_deployment_status_replicas{{namespace="app", deployment="{deployment_name}"}}',
     }
 
-# Normalization Constants (updated for MAX_REPLICAS=7)
+# Normalization Constants (updated for MAX_REPLICAS=8)
 NORMALIZATION = {
     "rps": 99.7,
     "cpu": 110.0,
     "memory": 81.1,
     "latency": 885.0,
-    "replicas": 7.0,  # Updated: Runtime max = 7
+    "replicas": 8.0,  # Updated: Runtime max = 8
 }
 
 # Logging level
