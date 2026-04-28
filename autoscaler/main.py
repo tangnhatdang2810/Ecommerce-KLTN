@@ -177,6 +177,10 @@ class RLAutoscaler:
     ) -> bool:
         """Execute scaling action for a service (RL-aware, directional cooldown).
 
+        ⚠️ Philosophy: RL is always EVALUATED every iteration, but EXECUTION is adjusted by:
+        - Emergency conditions (latency spike + RPS spike)
+        - Cooldown layer (safety mechanism to prevent flapping)
+
         Args:
             service: Service state object
             target_replicas: Initial target replica count
@@ -193,16 +197,28 @@ class RLAutoscaler:
             )
             return True
 
-        # 🔑 KEY: RL always makes decision, cooldown is only safety layer
+        # 🔑 KEY: RL evaluated every iteration, cooldown only adjusts execution timing
         allow_bypass_cooldown = False
         
         if action_name == "SCALE_UP":
-            # 1️⃣ Emergency detection: if latency is critical, allow bypass
+            # 1️⃣ Smart emergency detection (latency + RPS spike)
             latency = metrics.get("latency", 0)
-            if latency > LATENCY_CRITICAL:
+            rps = metrics.get("rps", 0)
+            prev_rps = service.previous_rps
+            
+            # RPS spike detection: is load suddenly increasing?
+            rps_spike_ratio = (rps - prev_rps) / rps if rps > 0 else 0
+            
+            is_emergency = (
+                latency > LATENCY_CRITICAL or 
+                (rps > 0 and rps_spike_ratio > (RPS_SPIKE_PERCENT / 100))
+            )
+            
+            if is_emergency:
                 allow_bypass_cooldown = True
                 logger.warning(
-                    f"[{service.service_name}] 🚨 EMERGENCY: latency={latency:.0f}ms > {LATENCY_CRITICAL}ms → BYPASS_COOLDOWN"
+                    f"[{service.service_name}] 🚨 EMERGENCY: latency={latency:.0f}ms, "
+                    f"RPS_spike={rps_spike_ratio*100:.1f}% → BYPASS_COOLDOWN"
                 )
             
             # 2️⃣ Directional cooldown for SCALE_UP (short: 15s)
@@ -214,7 +230,7 @@ class RLAutoscaler:
                     )
                     return False
             
-            # 3️⃣ Multi-step scaling for SCALE_UP
+            # 3️⃣ Multi-step scaling for SCALE_UP (adaptive + capacity-aware)
             final_replicas = self._calculate_adaptive_step(
                 target_replicas, current_replicas, metrics, action_name
             )
@@ -252,8 +268,9 @@ class RLAutoscaler:
     ) -> int:
         """Calculate adaptive scaling step based on normalized metrics.
 
-        Multi-step scaling:
-        - rps_norm > 0.9: +2 pods (aggressive)
+        Multi-step scaling (capacity-aware):
+        - rps_norm > 0.9 AND current < 5: +2 pods (aggressive on small cluster)
+        - rps_norm > 0.9 AND current >= 5: +1 pod (conservative on large cluster)
         - rps_norm > 0.7: +1 pod
         - otherwise: +1 pod
 
@@ -273,10 +290,17 @@ class RLAutoscaler:
         rps = metrics.get("rps", 0)
         rps_norm = rps / 99.7 if rps else 0  # Using training normalization constant
 
+        # Capacity-aware step calculation
         if rps_norm > 0.9:
-            step = 2  # Aggressive: +2 pods
+            # Aggressive only on small clusters, conservative on large
+            if current_replicas < 5:
+                step = 2  # +2 pods (small cluster, plenty of headroom)
+                reason = "aggressive (+2): small cluster + high load"
+            else:
+                step = 1  # +1 pod (large cluster, less aggressive)
+                reason = "conservative (+1): large cluster + high load"
             logger.info(
-                f"[metrics] Adaptive SCALE_UP: rps_norm={rps_norm:.3f} > 0.9 → step=+2"
+                f"[metrics] Adaptive SCALE_UP: rps_norm={rps_norm:.3f} > 0.9, current={current_replicas} → {reason}"
             )
         elif rps_norm > 0.7:
             step = 1  # Normal: +1 pod
@@ -286,12 +310,13 @@ class RLAutoscaler:
         else:
             step = 1  # Conservative: +1 pod
 
+        # Apply step with safety bounds
         final_replicas = min(current_replicas + step, MAX_REPLICAS)
         
         if final_replicas != target_replicas:
             logger.info(
                 f"[metrics] Adaptive step override: {target_replicas} → {final_replicas} "
-                f"(rps_norm={rps_norm:.3f}, step={step})"
+                f"(rps_norm={rps_norm:.3f}, step={step}, current={current_replicas})"
             )
 
         return final_replicas
