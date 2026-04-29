@@ -25,7 +25,7 @@ ADAPTIVE_STEP = True      # Enable multi-step scaling based on normalized metric
 COOLDOWN_SECONDS = 60     # Legacy: kept for compatibility
 
 # RL Model Configuration
-ALGO = os.getenv("ALGO", "ppo")  # ppo or a2c
+ALGO = os.getenv("ALGO", "a2c")  # ppo or a2c
 MODEL_PATH = f"models/{ALGO}_k8s_autoscaler.zip"
 
 # Prometheus Configuration
