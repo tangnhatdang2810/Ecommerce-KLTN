@@ -58,13 +58,13 @@ spec:
             httpGet:
               path: /actuator/health
               port: 9090
-            initialDelaySeconds: 30
+            initialDelaySeconds: 90
             periodSeconds: 10
           livenessProbe:
             httpGet:
               path: /actuator/health
               port: 9090
-            initialDelaySeconds: 30
+            initialDelaySeconds: 90
             periodSeconds: 10
           resources:
             requests:
