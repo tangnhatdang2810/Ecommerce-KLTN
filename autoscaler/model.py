@@ -48,16 +48,16 @@ class RLModel:
 
         # Load model
         try:
-            # Try PPO first
-            self.model = PPO.load(resolved_path)
-            self.algo_type = "PPO"
-            logger.info(f"Loaded PPO model from {resolved_path}")
+            # Try A2C first
+            self.model = A2C.load(resolved_path)
+            self.algo_type = "A2C"
+            logger.info(f"Loaded A2C model from {resolved_path}")
         except Exception as e:
-            logger.debug(f"PPO load failed: {e}, trying A2C...")
+            logger.debug(f"A2C load failed: {e}, trying PPO...")
             try:
-                self.model = A2C.load(resolved_path)
-                self.algo_type = "A2C"
-                logger.info(f"Loaded A2C model from {resolved_path}")
+                self.model = PPO.load(resolved_path)
+                self.algo_type = "PPO"
+                logger.info(f"Loaded PPO model from {resolved_path}")
             except Exception as e2:
                 logger.error(f"Failed to load model: {e2}")
                 raise
