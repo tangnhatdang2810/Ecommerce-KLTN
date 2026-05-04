@@ -18,7 +18,7 @@ spec:
     spec:
       containers:
         - name: frontend
-          image: tangnhatdang/ecommerce-kltn-frontend:6775cb5
+          image: tangnhatdang/ecommerce-kltn-frontend:e28ac38
           ports:
             - containerPort: 8080
           env:
