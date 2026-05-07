@@ -30,7 +30,7 @@ spec:
           env:
             # Algorithm: ppo or a2c
             - name: ALGO
-              value: "a2c"
+              value: "ppo"
 
             # Prometheus URL (cross-namespace: monitoring-kube-prometheus-prometheus.monitoring)
             - name: PROM_URL
