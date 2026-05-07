@@ -18,7 +18,7 @@ spec:
     spec:
       containers:
         - name: productcatalogservice
-          image: tangnhatdang/ecommerce-kltn-productcatalogservice:e28ac38
+          image: tangnhatdang/ecommerce-kltn-productcatalogservice:6e2f6a8
           ports:
             - containerPort: 3550
           env:
