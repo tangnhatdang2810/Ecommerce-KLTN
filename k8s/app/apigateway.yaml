@@ -18,7 +18,7 @@ spec:
     spec:
       containers:
         - name: apigateway
-          image: tangnhatdang/ecommerce-kltn-apigateway:6e2f6a8
+          image: tangnhatdang/ecommerce-kltn-apigateway:fcfbf07
           ports:
             - containerPort: 9090
           env:
