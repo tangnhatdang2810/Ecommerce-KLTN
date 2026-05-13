@@ -9,17 +9,11 @@ import numpy as np
 from config import (
     NAMESPACE,
     TARGET_SERVICES,
-    COOLDOWN_SECONDS,
     MODEL_PATH,
     MIN_REPLICAS,
     MAX_REPLICAS,
     LOG_LEVEL,
     build_metric_queries,
-    COOLDOWN_SCALE_UP,
-    COOLDOWN_SCALE_DOWN,
-    LATENCY_CRITICAL,
-    RPS_SPIKE_PERCENT,
-    ADAPTIVE_STEP,
 )
 from prometheus_client import PrometheusClient
 from scaler import KubernetesScaler
@@ -48,7 +42,6 @@ class ServiceState:
         self.service_name = service_name
         self.deployment_name = deployment_name
         self.previous_rps = 0.0
-        self.last_scale_time = 0
         self.iteration = 0
         # Build metric queries specific to this service
         self.metric_queries = build_metric_queries(service_name, deployment_name)
@@ -150,22 +143,7 @@ class RLAutoscaler:
             )
             return current_replicas, "ERROR", {}
 
-    def should_cooldown_down(self, service: ServiceState) -> bool:
-        """Check if service is in cooldown period (SCALE_DOWN only).
 
-        Args:
-            service: Service state object
-
-        Returns:
-            True if in cooldown, False otherwise
-        """
-        elapsed = time.time() - service.last_scale_time
-        if elapsed < COOLDOWN_SCALE_DOWN:
-            logger.info(
-                f"[{service.service_name}] Scale-DOWN cooldown: {COOLDOWN_SCALE_DOWN - elapsed:.1f}s remaining"
-            )
-            return True
-        return False
 
     def execute_scaling(
         self, 
@@ -175,17 +153,16 @@ class RLAutoscaler:
         metrics: dict,
         action_name: str
     ) -> bool:
-        """Execute scaling action for a service (RL-aware, directional cooldown).
+        """Execute scaling action for a service (RL model decides, no cooldown interference).
 
-        ⚠️ Philosophy: RL is always EVALUATED every iteration, but EXECUTION is adjusted by:
-        - Emergency conditions (latency spike + RPS spike)
-        - Cooldown layer (safety mechanism to prevent flapping)
+        ⚠️ Philosophy: Model RL training already handles flapping prevention via reward function.
+        Direct execution without cooldown allows objective evaluation of model behavior.
 
         Args:
             service: Service state object
-            target_replicas: Initial target replica count
+            target_replicas: Target replica count from model
             current_replicas: Current replica count
-            metrics: Collected metrics for emergency detection
+            metrics: Collected metrics (unused in this minimal mode)
             action_name: Scaling action ("scale_up", "scale_down", "stay")
 
         Returns:
@@ -197,129 +174,18 @@ class RLAutoscaler:
             )
             return True
 
-        # 🔑 KEY: RL evaluated every iteration, cooldown only adjusts execution timing
-        allow_bypass_cooldown = False
-        
-        if action_name == "scale_up":
-            # 1️⃣ Smart emergency detection (latency + RPS spike)
-            latency = metrics.get("latency", 0)
-            rps = metrics.get("rps", 0)
-            prev_rps = service.previous_rps
-            
-            # RPS spike detection: is load suddenly increasing?
-            rps_spike_ratio = (rps - prev_rps) / rps if rps > 0 else 0
-            
-            is_emergency = (
-                latency > LATENCY_CRITICAL or 
-                (rps > 0 and rps_spike_ratio > (RPS_SPIKE_PERCENT / 100))
-            )
-            
-            if is_emergency:
-                allow_bypass_cooldown = True
-                logger.warning(
-                    f"[{service.service_name}] 🚨 EMERGENCY: latency={latency:.0f}ms, "
-                    f"RPS_spike={rps_spike_ratio*100:.1f}% → BYPASS_COOLDOWN"
-                )
-            
-            # 2️⃣ Directional cooldown for SCALE_UP (short: 15s)
-            if not allow_bypass_cooldown:
-                elapsed = time.time() - service.last_scale_time
-                if elapsed < COOLDOWN_SCALE_UP:
-                    logger.info(
-                        f"[{service.service_name}] Scale-UP cooldown: {COOLDOWN_SCALE_UP - elapsed:.1f}s remaining"
-                    )
-                    return False
-            
-            # 3️⃣ Multi-step scaling for SCALE_UP (adaptive + capacity-aware)
-            final_replicas = self._calculate_adaptive_step(
-                target_replicas, current_replicas, metrics, action_name
-            )
-            
-        elif action_name == "scale_down":
-            # 4️⃣ Long cooldown for SCALE_DOWN (60s - avoid flapping)
-            if self.should_cooldown_down(service):
-                return False
-            
-            # Conservative: -1 pod per scaling down
-            final_replicas = max(current_replicas - 1, MIN_REPLICAS)
-        else:
-            final_replicas = current_replicas
-
-        # Execute scaling
+        # Execute scaling directly as model decides (no cooldown interference)
         success = self.k8s_scaler.scale_deployment(
-            final_replicas, service.deployment_name
+            target_replicas, service.deployment_name
         )
 
         if success:
-            service.last_scale_time = time.time()
             logger.info(
-                f"[{service.service_name}] ✅ Scaled {action_name}: {current_replicas} → {final_replicas}"
+                f"[{service.service_name}] ✅ Scaled {action_name}: {current_replicas} → {target_replicas}"
             )
             return True
 
         return False
-
-    def _calculate_adaptive_step(
-        self,
-        target_replicas: int,
-        current_replicas: int,
-        metrics: dict,
-        action_name: str
-    ) -> int:
-        """Calculate adaptive scaling step based on normalized metrics.
-
-        Multi-step scaling (capacity-aware):
-        - rps_norm > 0.9 AND current < 5: +2 pods (aggressive on small cluster)
-        - rps_norm > 0.9 AND current >= 5: +1 pod (conservative on large cluster)
-        - rps_norm > 0.7: +1 pod
-        - otherwise: +1 pod
-
-        Args:
-            target_replicas: RL model target
-            current_replicas: Current replica count
-            metrics: Collected metrics
-            action_name: Scaling action
-
-        Returns:
-            Final replica count after adaptive step
-        """
-        if not ADAPTIVE_STEP or action_name != "scale_up":
-            return target_replicas
-
-        # Calculate normalized RPS to determine scaling aggression
-        rps = metrics.get("rps", 0)
-        rps_norm = rps / 99.7 if rps else 0  # Using training normalization constant
-
-        # Capacity-aware step calculation
-        if rps_norm > 0.9:
-            # Aggressive only on small clusters, conservative on large
-            if current_replicas < 5:
-                step = 2  # +2 pods (small cluster, plenty of headroom)
-                reason = "aggressive (+2): small cluster + high load"
-            else:
-                step = 1  # +1 pod (large cluster, less aggressive)
-                reason = "conservative (+1): large cluster + high load"
-            logger.info(
-                f"[metrics] Adaptive SCALE_UP: rps_norm={rps_norm:.3f} > 0.9, current={current_replicas} → {reason}"
-            )
-        elif rps_norm > 0.7:
-            step = 1  # Normal: +1 pod
-            logger.info(
-                f"[metrics] Adaptive SCALE_UP: rps_norm={rps_norm:.3f} > 0.7 → step=+1"
-            )
-        else:
-            step = 1  # Conservative: +1 pod
-
-        # Apply step with safety bounds
-        final_replicas = min(current_replicas + step, MAX_REPLICAS)
-        
-        if final_replicas != target_replicas:
-            logger.info(
-                f"[metrics] Adaptive step override: {target_replicas} → {final_replicas} "
-                f"(rps_norm={rps_norm:.3f}, step={step}, current={current_replicas})"
-            )
-
-        return final_replicas
 
     def process_service(self, service: ServiceState) -> bool:
         """Process one service: collect metrics, decide, and execute scaling.
