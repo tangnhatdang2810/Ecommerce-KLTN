@@ -42,14 +42,14 @@ def normalize_metrics(
     latency_norm = latency / NORMALIZATION["latency"]
     normalized["latency_norm"] = float(np.clip(latency_norm, 0, 1))
 
-    # Replicas normalization (runtime max = 7)
+    # Replicas normalization (runtime max = 6)
     replicas = metrics.get("replicas", 1.0) or 1.0
     replicas_norm = replicas / NORMALIZATION["replicas"]
     normalized["replicas_norm"] = float(np.clip(replicas_norm, 0, 1))
 
-    # Delta RPS
+    # Delta RPS (rate of change in RPS)
     delta_rps = rps - previous_rps
-    delta_rps_norm = delta_rps / NORMALIZATION["rps"]
+    delta_rps_norm = delta_rps / NORMALIZATION.get("delta_rps", 50.0)
     normalized["delta_rps_norm"] = float(np.clip(delta_rps_norm, -1, 1))
 
     # Construct state array for RL model
@@ -73,7 +73,7 @@ def action_to_scaling(action: int, current_replicas: int, min_replicas: int, max
     """Convert RL action to scaling decision.
 
     Args:
-        action: RL model action (0=KEEP, 1=SCALE_UP, 2=SCALE_DOWN)
+        action: RL model action (0=scale_down, 1=stay, 2=scale_up)
         current_replicas: Current number of replicas
         min_replicas: Minimum allowed replicas
         max_replicas: Maximum allowed replicas
@@ -81,19 +81,19 @@ def action_to_scaling(action: int, current_replicas: int, min_replicas: int, max
     Returns:
         Tuple of (target_replicas, action_name)
     """
-    action_map = {0: "KEEP", 1: "SCALE_UP", 2: "SCALE_DOWN"}
+    action_map = {0: "scale_down", 1: "stay", 2: "scale_up"}
     action_name = action_map.get(action, "UNKNOWN")
 
-    if action == 0:  # KEEP
-        return current_replicas, action_name
-    elif action == 1:  # SCALE UP
-        target = min(current_replicas + 1, max_replicas)
-        return target, action_name
-    elif action == 2:  # SCALE DOWN
+    if action == 0:  # SCALE DOWN
         target = max(current_replicas - 1, min_replicas)
         return target, action_name
+    elif action == 1:  # STAY
+        return current_replicas, action_name
+    elif action == 2:  # SCALE UP
+        target = min(current_replicas + 1, max_replicas)
+        return target, action_name
     else:
-        logger.warning(f"Unknown action: {action}, keeping current replicas")
+        logger.warning(f"Unknown action: {action}, staying at current replicas")
         return current_replicas, "UNKNOWN"
 
 

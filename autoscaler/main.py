@@ -186,21 +186,21 @@ class RLAutoscaler:
             target_replicas: Initial target replica count
             current_replicas: Current replica count
             metrics: Collected metrics for emergency detection
-            action_name: Scaling action ("SCALE_UP", "SCALE_DOWN", "KEEP")
+            action_name: Scaling action ("scale_up", "scale_down", "stay")
 
         Returns:
             True if scaling executed or not needed
         """
-        if action_name == "KEEP" or target_replicas == current_replicas:
+        if action_name == "stay" or target_replicas == current_replicas:
             logger.debug(
-                f"[{service.service_name}] No scaling needed (action=KEEP or target equals current)"
+                f"[{service.service_name}] No scaling needed (action=stay or target equals current)"
             )
             return True
 
         # 🔑 KEY: RL evaluated every iteration, cooldown only adjusts execution timing
         allow_bypass_cooldown = False
         
-        if action_name == "SCALE_UP":
+        if action_name == "scale_up":
             # 1️⃣ Smart emergency detection (latency + RPS spike)
             latency = metrics.get("latency", 0)
             rps = metrics.get("rps", 0)
@@ -235,7 +235,7 @@ class RLAutoscaler:
                 target_replicas, current_replicas, metrics, action_name
             )
             
-        elif action_name == "SCALE_DOWN":
+        elif action_name == "scale_down":
             # 4️⃣ Long cooldown for SCALE_DOWN (60s - avoid flapping)
             if self.should_cooldown_down(service):
                 return False
@@ -283,7 +283,7 @@ class RLAutoscaler:
         Returns:
             Final replica count after adaptive step
         """
-        if not ADAPTIVE_STEP or action_name != "SCALE_UP":
+        if not ADAPTIVE_STEP or action_name != "scale_up":
             return target_replicas
 
         # Calculate normalized RPS to determine scaling aggression
