@@ -56,7 +56,7 @@ def build_metric_queries(service_name: str, deployment_name: str) -> dict:
     return {
         "rps": f'sum(rate(http_server_requests_seconds_count{{namespace="app", service=~"{service_name}.*", uri!~".*actuator.*"}}[1m]))',
         "cpu": f'avg(rate(container_cpu_usage_seconds_total{{namespace="app", pod=~"{deployment_name}-.*"}}[1m])) * 100',
-        "memory": f'avg(container_memory_working_set_bytes{{namespace="app", pod=~"{deployment_name}-.*"}}) / avg(kube_pod_container_resource_limits{{namespace="app", resource="memory", pod=~"{deployment_name}-.*"}}) * 100',
+        "memory": f'clamp_max(avg(container_memory_working_set_bytes{{namespace="app", pod=~"{deployment_name}-.*"}}) / avg(kube_pod_container_resource_limits{{namespace="app", resource="memory", pod=~"{deployment_name}-.*"}}) * 100, 100)',
         "latency": f'histogram_quantile(0.95, sum(rate(http_server_requests_seconds_bucket{{namespace="app", service=~"{service_name}.*"}}[1m])) by (le)) * 1000',
         "replicas": f'kube_deployment_status_replicas_available{{namespace="app", deployment="{deployment_name}"}}',
     }

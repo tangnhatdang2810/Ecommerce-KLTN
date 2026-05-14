@@ -127,8 +127,16 @@ class RLAutoscaler:
                 f"[{service.service_name}] Normalized state: {normalized}"
             )
 
-            # Get action from RL model
-            action, _ = self.model.predict(state, deterministic=True)
+            # Idle detection: if RPS < 1.0, force stay (no scaling needed when idle)
+            current_rps = metrics.get("rps", 0.0)
+            if current_rps < 1.0:
+                logger.info(
+                    f"[{service.service_name}] Idle detected (RPS={current_rps:.2f} < 1.0), forcing stay action"
+                )
+                action = 1  # Action 1 = stay
+            else:
+                # Get action from RL model
+                action, _ = self.model.predict(state, deterministic=True)
 
             # Convert action to scaling decision
             target_replicas, action_name = action_to_scaling(
