@@ -43,6 +43,7 @@ class ServiceState:
         self.deployment_name = deployment_name
         self.previous_rps = 0.0
         self.iteration = 0
+        self.idle_steps = 0  # Counter for consecutive idle steps
         # Build metric queries specific to this service
         self.metric_queries = build_metric_queries(service_name, deployment_name)
 
@@ -127,16 +128,40 @@ class RLAutoscaler:
                 f"[{service.service_name}] Normalized state: {normalized}"
             )
 
-            # Idle detection: if RPS < 1.0, force stay (no scaling needed when idle)
+            # Get action from RL model first
+            action, _ = self.model.predict(state, deterministic=True)
+
+            # Idle detection: apply smart idle handling
             current_rps = metrics.get("rps", 0.0)
             if current_rps < 1.0:
-                logger.info(
-                    f"[{service.service_name}] Idle detected (RPS={current_rps:.2f} < 1.0), forcing stay action"
-                )
-                action = 1  # Action 1 = stay
+                service.idle_steps += 1
+                
+                # Force scale down if idle > 4 steps (~60s) and replicas > min
+                if service.idle_steps > 4 and current_replicas > MIN_REPLICAS:
+                    logger.info(
+                        f"[{service.service_name}] Idle {service.idle_steps} steps "
+                        f"→ force scale_down ({current_replicas}→{current_replicas-1})"
+                    )
+                    action = 0  # Force scale down
+                elif action == 2:
+                    logger.info(
+                        f"[{service.service_name}] Idle detected "
+                        f"(RPS={current_rps:.2f} < 1.0) → block scale_up → stay"
+                    )
+                    action = 1  # Force stay
+                else:
+                    logger.info(
+                        f"[{service.service_name}] Idle detected "
+                        f"(RPS={current_rps:.2f} < 1.0, idle_steps={service.idle_steps}) "
+                        f"→ model action={['scale_down','stay','scale_up'][action]}"
+                    )
             else:
-                # Get action from RL model
-                action, _ = self.model.predict(state, deterministic=True)
+                # Reset idle counter when load returns
+                if service.idle_steps > 0:
+                    logger.info(
+                        f"[{service.service_name}] Load returned (RPS={current_rps:.2f}), reset idle counter"
+                    )
+                service.idle_steps = 0
 
             # Convert action to scaling decision
             target_replicas, action_name = action_to_scaling(
@@ -356,10 +381,6 @@ def main():
     except Exception as e:
         logger.error(f"Failed to start autoscaler: {e}", exc_info=True)
         sys.exit(1)
-
-
-if __name__ == "__main__":
-    main()
 
 
 if __name__ == "__main__":

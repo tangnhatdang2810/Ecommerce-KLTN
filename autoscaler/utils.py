@@ -29,32 +29,32 @@ def normalize_metrics(
     # RPS normalization (z-score)
     rps = metrics.get("rps", 0.0) or 0.0
     rps_norm = (rps - NORMALIZATION_MEAN["rps"]) / NORMALIZATION_SCALE["rps"]
-    normalized["rps_norm"] = float(np.clip(rps_norm, -1, 1))
+    normalized["rps_norm"] = float(np.clip(rps_norm, -5, 5))
 
     # CPU normalization (z-score)
     cpu = metrics.get("cpu", 0.0) or 0.0
     cpu_norm = (cpu - NORMALIZATION_MEAN["cpu"]) / NORMALIZATION_SCALE["cpu"]
-    normalized["cpu_norm"] = float(np.clip(cpu_norm, -1, 1))
+    normalized["cpu_norm"] = float(np.clip(cpu_norm, -5, 5))
 
     # Memory normalization (z-score)
     memory = metrics.get("memory", 0.0) or 0.0
     memory_norm = (memory - NORMALIZATION_MEAN["memory"]) / NORMALIZATION_SCALE["memory"]
-    normalized["memory_norm"] = float(np.clip(memory_norm, -1, 1))
+    normalized["memory_norm"] = float(np.clip(memory_norm, -5, 5))
 
     # Latency normalization (z-score)
     latency = metrics.get("latency", 0.0) or 0.0
     latency_norm = (latency - NORMALIZATION_MEAN["latency_p95"]) / NORMALIZATION_SCALE["latency_p95"]
-    normalized["latency_norm"] = float(np.clip(latency_norm, -1, 1))
+    normalized["latency_norm"] = float(np.clip(latency_norm, -5, 5))
 
     # Replicas normalization (z-score)
     replicas = metrics.get("replicas", 1.0) or 1.0
     replicas_norm = (replicas - NORMALIZATION_MEAN["replicas"]) / NORMALIZATION_SCALE["replicas"]
-    normalized["replicas_norm"] = float(np.clip(replicas_norm, -1, 1))
+    normalized["replicas_norm"] = float(np.clip(replicas_norm, -5, 5))
 
     # Delta RPS (rate of change in RPS, z-score normalized)
     delta_rps = rps - previous_rps
     delta_rps_norm = (delta_rps - NORMALIZATION_MEAN["delta_rps"]) / NORMALIZATION_SCALE["delta_rps"]
-    normalized["delta_rps_norm"] = float(np.clip(delta_rps_norm, -1, 1))
+    normalized["delta_rps_norm"] = float(np.clip(delta_rps_norm, -5, 5))
 
     # Construct state array for RL model
     # Order: [rps_norm, cpu_norm, memory_norm, latency_norm, replicas_norm, delta_rps_norm]
