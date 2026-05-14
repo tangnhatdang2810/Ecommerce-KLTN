@@ -49,7 +49,7 @@ class LongRunningLoadShape(LoadTestShape):
         # 2. STEADY STATE (10-25p): Giữ mức 60 users 
         # (Mức này với wait_time thấp sẽ bắt đầu làm CPU nóng lên)
         elif run_time < 1500:
-            return (60, 0)
+            return (60, 1)
 
         # 3. MULTI-SPIKES (25-35p): Tăng vọt lên 150 users
         # CHỈNH SỬA 2: Nâng từ 120 lên 150 để chắc chắn vượt ngưỡng scale của 16GB RAM

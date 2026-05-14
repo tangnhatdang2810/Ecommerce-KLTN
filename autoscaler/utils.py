@@ -3,7 +3,7 @@
 import logging
 import numpy as np
 from typing import Dict, Tuple
-from config import NORMALIZATION
+from config import NORMALIZATION, NORMALIZATION_MEAN, NORMALIZATION_SCALE
 
 logger = logging.getLogger(__name__)
 
@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 def normalize_metrics(
     metrics: Dict[str, float], previous_rps: float = 0.0
 ) -> Tuple[np.ndarray, Dict[str, float]]:
-    """Normalize metrics for RL model input.
+    """Normalize metrics for RL model input using z-score normalization.
 
     Args:
         metrics: Raw metrics dict (rps, cpu, memory, latency, replicas)
@@ -19,37 +19,41 @@ def normalize_metrics(
 
     Returns:
         Tuple of (normalized_state array, normalized_dict)
+        
+    Note:
+        Uses z-score normalization: (value - mean) / scale
+        This matches the training environment normalization.
     """
     normalized = {}
 
-    # RPS normalization
+    # RPS normalization (z-score)
     rps = metrics.get("rps", 0.0) or 0.0
-    rps_norm = rps / NORMALIZATION["rps"]
+    rps_norm = (rps - NORMALIZATION_MEAN["rps"]) / NORMALIZATION_SCALE["rps"]
     normalized["rps_norm"] = float(np.clip(rps_norm, -1, 1))
 
-    # CPU normalization
+    # CPU normalization (z-score)
     cpu = metrics.get("cpu", 0.0) or 0.0
-    cpu_norm = cpu / NORMALIZATION["cpu"]
-    normalized["cpu_norm"] = float(np.clip(cpu_norm, 0, 1))
+    cpu_norm = (cpu - NORMALIZATION_MEAN["cpu"]) / NORMALIZATION_SCALE["cpu"]
+    normalized["cpu_norm"] = float(np.clip(cpu_norm, -1, 1))
 
-    # Memory normalization (clamp max 0.8)
+    # Memory normalization (z-score)
     memory = metrics.get("memory", 0.0) or 0.0
-    memory_norm = memory / NORMALIZATION["memory"]
-    normalized["memory_norm"] = float(np.clip(memory_norm, 0, 0.8))
+    memory_norm = (memory - NORMALIZATION_MEAN["memory"]) / NORMALIZATION_SCALE["memory"]
+    normalized["memory_norm"] = float(np.clip(memory_norm, -1, 1))
 
-    # Latency normalization
+    # Latency normalization (z-score)
     latency = metrics.get("latency", 0.0) or 0.0
-    latency_norm = latency / NORMALIZATION["latency"]
-    normalized["latency_norm"] = float(np.clip(latency_norm, 0, 1))
+    latency_norm = (latency - NORMALIZATION_MEAN["latency_p95"]) / NORMALIZATION_SCALE["latency_p95"]
+    normalized["latency_norm"] = float(np.clip(latency_norm, -1, 1))
 
-    # Replicas normalization (runtime max = 6)
+    # Replicas normalization (z-score)
     replicas = metrics.get("replicas", 1.0) or 1.0
-    replicas_norm = replicas / NORMALIZATION["replicas"]
-    normalized["replicas_norm"] = float(np.clip(replicas_norm, 0, 1))
+    replicas_norm = (replicas - NORMALIZATION_MEAN["replicas"]) / NORMALIZATION_SCALE["replicas"]
+    normalized["replicas_norm"] = float(np.clip(replicas_norm, -1, 1))
 
-    # Delta RPS (rate of change in RPS)
+    # Delta RPS (rate of change in RPS, z-score normalized)
     delta_rps = rps - previous_rps
-    delta_rps_norm = delta_rps / NORMALIZATION.get("delta_rps", 50.0)
+    delta_rps_norm = (delta_rps - NORMALIZATION_MEAN["delta_rps"]) / NORMALIZATION_SCALE["delta_rps"]
     normalized["delta_rps_norm"] = float(np.clip(delta_rps_norm, -1, 1))
 
     # Construct state array for RL model

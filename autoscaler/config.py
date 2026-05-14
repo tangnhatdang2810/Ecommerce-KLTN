@@ -35,7 +35,7 @@ COOLDOWN_SECONDS = 60     # Legacy: kept for compatibility
 
 # RL Model Configuration
 ALGO = os.getenv("ALGO", "ppo")  # ppo or a2c (ppo is default, trained model)
-MODEL_PATH = f"models/{ALGO}_autoscaler_final.zip"  # Trained model file
+MODEL_PATH = f"models/{ALGO}_autoscaler.zip"  # Trained model file
 
 # Prometheus Configuration
 # Using FQDN to access monitoring-kube-prometheus-prometheus from app namespace
@@ -61,7 +61,27 @@ def build_metric_queries(service_name: str, deployment_name: str) -> dict:
         "replicas": f'kube_deployment_status_replicas{{namespace="app", deployment="{deployment_name}"}}',
     }
 
-# Normalization Constants (updated for MAX_REPLICAS=6, trained on synthetic dataset)
+# Normalization Constants (z-score normalization from training)
+# These are from the trained model's VecNormalize statistics
+NORMALIZATION_MEAN = {
+    "rps": 74.11146559075515,
+    "cpu": 2.8096141731420605,
+    "memory": 24.96668951185495,
+    "latency_p95": 7.399000488145049,
+    "replicas": 2.675483163976888,
+    "delta_rps": -0.08351009165172346,
+}
+
+NORMALIZATION_SCALE = {
+    "rps": 40.80411621911202,
+    "cpu": 1.6160535038892168,
+    "memory": 2.3825732209776818,
+    "latency_p95": 14.707872050780225,
+    "replicas": 1.452357785377225,
+    "delta_rps": 10.003825043583488,
+}
+
+# Legacy: kept for backward compatibility (deprecated, use NORMALIZATION_MEAN/SCALE)
 NORMALIZATION = {
     "rps": 99.7,         # 1-minute RPS rate
     "cpu": 110.0,        # CPU usage in percent
