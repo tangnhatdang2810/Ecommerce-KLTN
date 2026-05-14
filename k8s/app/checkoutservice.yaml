@@ -18,7 +18,7 @@ spec:
     spec:
       containers:
         - name: checkoutservice
-          image: tangnhatdang/ecommerce-kltn-checkoutservice:fcfbf07
+          image: tangnhatdang/ecommerce-kltn-checkoutservice:0523439
           ports:
             - containerPort: 5050
           env:
