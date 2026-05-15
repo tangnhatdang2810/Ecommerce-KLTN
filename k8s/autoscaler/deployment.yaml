@@ -24,7 +24,7 @@ spec:
       containers:
         - name: autoscaler
           # Update tag as needed during CI/CD
-          image: tangnhatdang/ecommerce-kltn-autoscaler:2a97880
+          image: tangnhatdang/ecommerce-kltn-autoscaler:bbd64e0
           imagePullPolicy: Always
 
           env:
