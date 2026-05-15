@@ -487,6 +487,7 @@ class DRLAutoscalerAgent:
         # Predict action
         logger.info("Predicting action...")
         action, _ = self.model.predict(state, deterministic=True)
+        action = action.flatten()  # (1,3) → (3,)
         logger.info(f"Raw action output: {action}")
         
         # Convert to deltas
