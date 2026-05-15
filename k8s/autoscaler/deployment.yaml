@@ -30,7 +30,7 @@ spec:
           env:
             # Prometheus URL (in-cluster)
             - name: PROMETHEUS_URL
-              value: "http://prometheus-server.monitoring.svc.cluster.local"
+              value: "http://monitoring-kube-prometheus-prometheus.monitoring.svc.cluster.local:9090"
             
             # Kubernetes namespace where services are deployed
             - name: TARGET_NAMESPACE
