@@ -1,6 +1,22 @@
-kubernetes==28.1.0
+torch==2.2.2+cpu
+
+# Stable Baselines3 - phải khớp với version dùng khi train trên Colab
+stable-baselines3==2.3.2
+
+# Gymnasium - phải khớp với version train
+gymnasium==0.29.1
+
+# Sklearn - dùng cho MinMaxScaler (scaler.pkl)
+scikit-learn==1.4.2
+
+# Kubernetes Python client
+kubernetes==29.0.0
+
+# HTTP requests cho Prometheus
 requests==2.31.0
+
+# Numpy
 numpy==1.26.4
-stable-baselines3==2.8.0
-scikit-learn==1.3.2
+
+# Joblib - dùng để load scaler.pkl
 joblib==1.3.2

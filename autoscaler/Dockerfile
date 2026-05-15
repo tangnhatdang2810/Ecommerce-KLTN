@@ -13,14 +13,11 @@ RUN useradd -m -u 1000 autoscaler && chown -R autoscaler:autoscaler /app
 # Copy requirements first (better Docker cache layer)
 COPY requirements.txt .
 
-# Install torch from PyTorch official index FIRST
+# Install dependencies with torch from PyTorch official index
 RUN pip install --no-cache-dir \
     --index-url https://download.pytorch.org/whl/cpu \
     --extra-index-url https://pypi.org/simple/ \
-    torch==2.10.0+cpu
-
-# Install rest of dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+    -r requirements.txt
 
 # Copy pre-trained RL models (BEFORE application code)
 COPY --chown=autoscaler:autoscaler models/ models/
