@@ -1,82 +1,193 @@
+"""
+Script thu thập metrics từ Prometheus cho 4 services:
+- cartservice
+- productcatalogservice
+- apigateway
+- authservice
+
+Metrics thu thập: cpu, memory, latency, rps, replicas, delta_rps
+Interval: 15 giây
+Output: CSV riêng cho từng service
+"""
+
 import requests
-import pandas as pd
+import csv
 import time
 import os
-import math
+import signal
+import sys
 from datetime import datetime
-from concurrent.futures import ThreadPoolExecutor
 
-# ================= CẤU HÌNH =================
-PROMETHEUS_URL = "http://192.168.123.30:30830" # <-- Kiểm tra lại IP này
-OUTPUT_PATH    = "raw_metrics.csv"
-STEP_SECONDS   = 15
-NAMESPACE      = "app"
+# ===================== CẤU HÌNH =====================
+PROMETHEUS_URL = "http://192.168.123.30:30830"
+NAMESPACE = "app"
+INTERVAL = 15  # giây
 
-SERVICES = {
-    "apigateway": "apigateway",
-    "productcatalog": "productcatalogservice",
-    "cartservice": "cartservice",
-}
+SERVICES = ["cartservice", "productcatalogservice", "apigateway"]
 
-# ================= QUERIES (Đã tối ưu nhãn) =================
-def get_service_queries(svc_key, deploy_name):
-    # Dùng service_name để lọc vì Grafana của bạn dùng nhãn này
+OUTPUT_DIR = "data/session2_spike_extra"  # đổi cho mỗi session
+# session1: "data/session1_constant"
+# session2: "data/session2_spike"
+# session3: "data/session3_periodic"
+# ====================================================
+
+
+def query_prometheus(promql: str) -> float | None:
+    try:
+        resp = requests.get(
+            f"{PROMETHEUS_URL}/api/v1/query",
+            params={"query": promql},
+            timeout=5
+        )
+        data = resp.json()
+        results = data.get("data", {}).get("result", [])
+        if results:
+            return float(results[0]["value"][1])
+        return None
+    except Exception as e:
+        print(f"  [WARN] Query failed: {e}")
+        return None
+
+
+def build_queries(service: str) -> dict:
+    cpu = (
+        f'sum(rate(container_cpu_usage_seconds_total{{'
+        f'namespace="{NAMESPACE}", '
+        f'pod=~"{service}.*", '
+        f'container!=""'
+        f'}}[1m]))'
+    )
+    memory = (
+        f'sum(container_memory_working_set_bytes{{'
+        f'namespace="{NAMESPACE}", '
+        f'pod=~"{service}.*", '
+        f'container!=""'
+        f'}})'
+    )
+    replicas = (
+        f'kube_deployment_status_replicas{{'
+        f'namespace="{NAMESPACE}", '
+        f'deployment="{service}"'
+        f'}}'
+    )
+
+    # apigateway: uri=UNKNOWN nen KHONG filter uri
+    # con lai: loai tru /actuator
+    if service == "apigateway":
+        rps = (
+            f'sum(rate(http_server_requests_seconds_count{{'
+            f'namespace="{NAMESPACE}", '
+            f'service="{service}"'
+            f'}}[1m]))'
+        )
+        latency = (
+            f'histogram_quantile(0.95, sum(rate('
+            f'http_server_requests_seconds_bucket{{'
+            f'namespace="{NAMESPACE}", '
+            f'service="{service}"'
+            f'}}[1m])) by (le))'
+        )
+    else:
+        rps = (
+            f'sum(rate(http_server_requests_seconds_count{{'
+            f'namespace="{NAMESPACE}", '
+            f'service="{service}", '
+            f'uri!~"/actuator.*"'
+            f'}}[1m]))'
+        )
+        latency = (
+            f'histogram_quantile(0.95, sum(rate('
+            f'http_server_requests_seconds_bucket{{'
+            f'namespace="{NAMESPACE}", '
+            f'service="{service}", '
+            f'uri!~"/actuator.*"'
+            f'}}[1m])) by (le))'
+        )
+
+    return {"cpu": cpu, "memory": memory, "replicas": replicas, "rps": rps, "latency": latency}
+
+
+def collect_once(service: str, queries: dict, prev_rps) -> dict | None:
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    cpu      = query_prometheus(queries["cpu"])
+    memory   = query_prometheus(queries["memory"])
+    replicas = query_prometheus(queries["replicas"])
+    rps      = query_prometheus(queries["rps"])
+    latency  = query_prometheus(queries["latency"])
+
+    if None in (cpu, memory, replicas):
+        print(f"  [SKIP] {service}: thieu cpu/memory/replicas")
+        return None
+    if rps is None and latency is None:
+        print(f"  [SKIP] {service}: rps va latency deu None")
+        return None
+
+    rps     = rps     if rps     is not None else 0.0
+    latency = latency if latency is not None else 0.0
+    delta_rps = (rps - prev_rps) if prev_rps is not None else 0.0
+
     return {
-        "cpu": f'avg(rate(container_cpu_usage_seconds_total{{namespace="{NAMESPACE}", pod=~"{deploy_name}-.*"}}[1m])) * 100',
-        "memory": f'avg(container_memory_working_set_bytes{{namespace="{NAMESPACE}", pod=~"{deploy_name}-.*"}}) / avg(kube_pod_container_resource_limits{{namespace="{NAMESPACE}", resource="memory", pod=~"{deploy_name}-.*"}}) * 100',
-        "latency_p95": f'histogram_quantile(0.95, sum(rate(http_server_requests_seconds_bucket{{namespace="{NAMESPACE}", service=~"{deploy_name}.*"}}[1m])) by (le)) * 1000',
-        "rps": f'sum(rate(http_server_requests_seconds_count{{namespace="{NAMESPACE}", service=~"{deploy_name}.*", uri!~".*actuator.*"}}[1m]))',
-        "replicas": f'kube_deployment_status_replicas_available{{namespace="{NAMESPACE}", deployment="{deploy_name}"}}',
-        "error_rate": f'sum(rate(http_server_requests_seconds_count{{namespace="{NAMESPACE}", service=~"{deploy_name}.*", status=~"5.."}}[1m])) / clamp_min(sum(rate(http_server_requests_seconds_count{{namespace="{NAMESPACE}", service=~"{deploy_name}.*"}}[1m])), 1e-6)'
+        "timestamp": timestamp,
+        "cpu":       round(cpu,      6),
+        "memory":    int(memory),
+        "latency":   round(latency,  6),
+        "rps":       round(rps,      6),
+        "replicas":  int(replicas),
+        "delta_rps": round(delta_rps, 6),
+        "_rps_raw":  rps,
     }
 
-def query_prom(name, query):
-    try:
-        r = requests.get(f"{PROMETHEUS_URL}/api/v1/query", params={"query": query}, timeout=3)
-        res = r.json()
-        if res["status"] == "success" and res["data"]["result"]:
-            val = float(res["data"]["result"][0]["value"][1])
-            return name, (round(val, 4) if not math.isnan(val) else 0.0)
-        return name, 0.0
-    except:
-        return name, 0.0
 
-def collect_step():
-    all_queries = {}
-    for skey, dname in SERVICES.items():
-        svc_queries = get_service_queries(skey, dname)
-        for mname, q in svc_queries.items():
-            all_queries[f"{skey}_{mname}"] = q
+def main():
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    csv_files, csv_writers = {}, {}
+    fieldnames = ["timestamp", "cpu", "memory", "latency", "rps", "replicas", "delta_rps"]
 
-    # Chạy SONG SONG toàn bộ 18 query cùng lúc (mất ~1s thay vì 15s)
-    row = {"timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
-    with ThreadPoolExecutor(max_workers=20) as executor:
-        futures = [executor.submit(query_prom, k, q) for k, q in all_queries.items()]
-        for f in futures:
-            k, v = f.result()
-            row[k] = v
-    return row
+    for svc in SERVICES:
+        path = os.path.join(OUTPUT_DIR, f"{svc}_metrics.csv")
+        f = open(path, "w", newline="")
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        csv_files[svc] = f
+        csv_writers[svc] = writer
+        print(f"[INFO] Output: {path}")
 
-# ================= LOOP CHÍNH =================
-print(f"🚀 Đang thu thập... Lưu tại: {OUTPUT_PATH}")
-data_list = []
+    prev_rps = {svc: None for svc in SERVICES}
+    queries  = {svc: build_queries(svc) for svc in SERVICES}
 
-try:
+    def handle_exit(sig, frame):
+        print("\n[INFO] Dang dung, dong file...")
+        for f in csv_files.values():
+            f.close()
+        print("[INFO] Hoan tat. File luu tai:", OUTPUT_DIR)
+        sys.exit(0)
+
+    signal.signal(signal.SIGINT, handle_exit)
+
+    print(f"\n[INFO] Thu metrics: {', '.join(SERVICES)}")
+    print(f"[INFO] Output: {OUTPUT_DIR}")
+    print(f"[INFO] Interval: {INTERVAL}s | Ctrl+C de dung.\n")
+
+    row_count = {svc: 0 for svc in SERVICES}
+
     while True:
-        t1 = time.time()
-        row = collect_step()
-        data_list.append(row)
-        
-        # In nhanh kết quả để check
-        print(f"[{row['timestamp']}] API_RPS: {row['apigateway_rps']:.2f} | Cart_CPU: {row['cartservice_cpu']:.1f}% | Pods: {row['apigateway_replicas']}")
-        
-        # Lưu định kỳ
-        if len(data_list) % 5 == 0:
-            pd.DataFrame(data_list).to_csv(OUTPUT_PATH, index=False)
+        tick_start = time.time()
+        for svc in SERVICES:
+            result = collect_once(svc, queries[svc], prev_rps[svc])
+            if result:
+                prev_rps[svc] = result.pop("_rps_raw")
+                csv_writers[svc].writerow(result)
+                csv_files[svc].flush()
+                row_count[svc] += 1
 
-        # Nghỉ bù trừ (Sẽ hết lag vì query chỉ mất 1s)
-        elapsed = time.time() - t1
-        time.sleep(max(0, STEP_SECONDS - elapsed))
-except KeyboardInterrupt:
-    pd.DataFrame(data_list).to_csv(OUTPUT_PATH, index=False)
-    print("✅ Đã lưu data thành công!")
+        if row_count[SERVICES[0]] % 10 == 0 and row_count[SERVICES[0]] > 0:
+            now = datetime.now().strftime("%H:%M:%S")
+            counts = " | ".join(f"{s}: {row_count[s]}" for s in SERVICES)
+            print(f"[{now}] rows -> {counts}")
+
+        elapsed = time.time() - tick_start
+        time.sleep(max(0, INTERVAL - elapsed))
+
+
+if __name__ == "__main__":
+    main()

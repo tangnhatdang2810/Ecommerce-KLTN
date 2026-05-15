@@ -1,4 +1,4 @@
-FROM python:3.10-slim
+FROM python:3.11-slim
 
 WORKDIR /app
 
@@ -7,35 +7,29 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements
+# Create non-root user for security
+RUN useradd -m -u 1000 autoscaler && chown -R autoscaler:autoscaler /app
+
+# Copy requirements first (better Docker cache layer)
 COPY requirements.txt .
 
 # Install torch from PyTorch official index FIRST
-# Using --index-url to get CPU-only build (~1.5-2GB instead of 3-4GB with CUDA)
-# Using --extra-index-url to allow fallback to PyPI for dependencies like typing-extensions
 RUN pip install --no-cache-dir \
     --index-url https://download.pytorch.org/whl/cpu \
     --extra-index-url https://pypi.org/simple/ \
     torch==2.10.0+cpu
 
-# Install rest of dependencies from requirements.txt
-# Using --no-deps to skip torch dependency (already installed above)
-# This prevents pip from trying to pull full GPU torch from default PyPI
-RUN pip install --no-cache-dir -r requirements.txt 
+# Install rest of dependencies
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy pre-trained RL models (BEFORE application code)
+COPY --chown=autoscaler:autoscaler models/ models/
 
 # Copy application code
-COPY config.py .
-COPY prometheus_client.py .
-COPY scaler.py .
-COPY model.py .
-COPY utils.py .
-COPY main.py .
+COPY --chown=autoscaler:autoscaler agent.py .
 
-# Copy pre-trained RL models
-COPY models/ models/
+# Switch to non-root user
+USER autoscaler
 
-# DEBUG: Verify models were copied correctly
-RUN echo "===== DEBUG MODELS COPY ===== " && ls -lah /app/models/ && echo "===== DEBUG COMPLETE ====="
-
-# Run the application
-CMD ["python", "-u", "main.py"]
+# Run the agent
+CMD ["python", "-u", "agent.py"]
