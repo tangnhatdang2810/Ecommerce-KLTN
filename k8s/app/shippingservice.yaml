@@ -18,7 +18,7 @@ spec:
     spec:
       containers:
         - name: shippingservice
-          image: tangnhatdang/ecommerce-kltn-shippingservice:50399cd
+          image: tangnhatdang/ecommerce-kltn-shippingservice:cdf95da
           ports:
             - containerPort: 50051
           env:
