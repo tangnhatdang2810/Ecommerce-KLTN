@@ -391,11 +391,10 @@ class DRLAutoscalerAgent:
         
         logger.debug(f"Raw state vector (shape {state_array.shape}): {state_array}")
         
-        # Normalize using scaler
-        normalized_state = self.scaler.transform(state_array)
-        
-        # Clip to [0,1] to match training distribution
-        normalized_state = np.clip(normalized_state, 0.0, 1.0)
+        # Normalize + clip to [0,1] to match training distribution
+        normalized_state = np.clip(
+            self.scaler.transform(state_array), 0.0, 1.0
+        )
         
         logger.debug(f"Normalized state: {normalized_state}")
         
@@ -483,7 +482,28 @@ class DRLAutoscalerAgent:
             current_replicas[service] = replicas
             logger.info(f"[{service}] Current replicas: {replicas}")
         
-        # Build state vector
+        # Check idle state
+        total_rps = sum(metrics[svc].get('rps', 0) for svc in SERVICES)
+        total_cpu = sum(metrics[svc].get('cpu', 0) for svc in SERVICES)
+        
+        # Thresholds for idle detection
+        IDLE_RPS_THRESHOLD = 1.0   # req/s
+        IDLE_CPU_THRESHOLD = 0.05  # cores
+        
+        # If system is idle → force scale down to minimum
+        if total_rps < IDLE_RPS_THRESHOLD and total_cpu < IDLE_CPU_THRESHOLD:
+            logger.info(
+                f"System idle (rps={total_rps:.2f}, cpu={total_cpu:.3f}), "
+                "forcing scale down to minimum"
+            )
+            for svc in SERVICES:
+                current = current_replicas.get(svc, 1)
+                if current > 1:
+                    self.k8s_client.scale_deployment(svc, 1)
+                    logger.info(f"[{svc}] Idle scale down: {current} → 1")
+            return True
+        
+        # Normal mode: predict action from model
         logger.info("Building state vector...")
         state = self.build_state_vector(metrics)
         
