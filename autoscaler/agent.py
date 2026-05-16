@@ -394,6 +394,9 @@ class DRLAutoscalerAgent:
         # Normalize using scaler
         normalized_state = self.scaler.transform(state_array)
         
+        # Clip to [0,1] to match training distribution
+        normalized_state = np.clip(normalized_state, 0.0, 1.0)
+        
         logger.debug(f"Normalized state: {normalized_state}")
         
         return normalized_state
