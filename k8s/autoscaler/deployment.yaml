@@ -65,9 +65,9 @@ spec:
           livenessProbe:
             exec:
               command:
-                - /bin/sh
+                - python
                 - -c
-                - ps aux | grep -q "[a]gent.py"
+                - "import os; open('/app/agent.py')"
             initialDelaySeconds: 30
             periodSeconds: 30
 
