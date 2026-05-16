@@ -299,6 +299,7 @@ class DRLAutoscalerAgent:
         # State tracking
         self.prev_rps = {service: 0.0 for service in SERVICES}
         self.iteration = 0
+        self.last_idle_scaledown_time = 0
         
         logger.info("DRL Autoscaler Agent initialized successfully")
     
@@ -489,6 +490,7 @@ class DRLAutoscalerAgent:
         # Thresholds for idle detection
         IDLE_RPS_THRESHOLD = 1.0   # req/s
         IDLE_CPU_THRESHOLD = 0.05  # cores
+        IDLE_COOLDOWN = 60  # seconds
         
         # If system is idle → force scale down to minimum
         if total_rps < IDLE_RPS_THRESHOLD and total_cpu < IDLE_CPU_THRESHOLD:
@@ -501,6 +503,18 @@ class DRLAutoscalerAgent:
                 if current > 1:
                     self.k8s_client.scale_deployment(svc, 1)
                     logger.info(f"[{svc}] Idle scale down: {current} → 1")
+            self.last_idle_scaledown_time = time.time()
+            return True
+        
+        # Cooldown - skip prediction only if still idle
+        # If load increases → bypass cooldown immediately
+        time_since_scaledown = time.time() - self.last_idle_scaledown_time
+        still_in_cooldown = time_since_scaledown < IDLE_COOLDOWN
+        still_idle = total_rps < 10.0 and total_cpu < 0.1  # based on actual data
+        
+        if still_in_cooldown and still_idle:
+            remaining = int(IDLE_COOLDOWN - time_since_scaledown)
+            logger.info(f"Post-idle cooldown ({remaining}s remaining), skipping predict")
             return True
         
         # Normal mode: predict action from model
