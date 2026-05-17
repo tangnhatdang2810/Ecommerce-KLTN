@@ -26,7 +26,7 @@ spec:
 
       containers:
         - name: autoscaler
-          image: tangnhatdang/ecommerce-kltn-autoscaler:e175570
+          image: tangnhatdang/ecommerce-kltn-autoscaler:65f87d5
           imagePullPolicy: Always
 
           env:
