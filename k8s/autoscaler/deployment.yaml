@@ -37,7 +37,7 @@ spec:
             - name: SCALE_INTERVAL
               value: "15"
             - name: MODEL_PATH
-              value: "/app/models/ppo_single_best.zip"
+              value: "/app/models/a2c_single_best.zip"
             - name: SCALER_PATH
               value: "/app/models/scaler_single.pkl"
             - name: DRY_RUN

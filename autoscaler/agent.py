@@ -44,7 +44,7 @@ logger = logging.getLogger(__name__)
 PROMETHEUS_URL   = os.getenv("PROMETHEUS_URL", "http://monitoring-kube-prometheus-prometheus.monitoring.svc.cluster.local:9090")
 TARGET_NAMESPACE = os.getenv("TARGET_NAMESPACE", "app")
 SCALE_INTERVAL   = int(os.getenv("SCALE_INTERVAL", "15"))
-MODEL_PATH       = os.getenv("MODEL_PATH", "/app/models/ppo_single_best.zip")
+MODEL_PATH       = os.getenv("MODEL_PATH", "/app/models/a2c_single_best.zip")
 SCALER_PATH      = os.getenv("SCALER_PATH", "/app/models/scaler_single.pkl")
 DRY_RUN          = os.getenv("DRY_RUN", "false").lower() == "true"
 
@@ -152,10 +152,10 @@ class DRLAutoscalerAgent:
         logger.info(f"  Scaler path:     {SCALER_PATH}")
         logger.info(f"  DRY_RUN:         {DRY_RUN}")
 
-        # Load PPO model (dùng chung cho cả 3 services)
-        from stable_baselines3 import PPO
-        self.model = PPO.load(MODEL_PATH)
-        logger.info(f"Loaded PPO model from {MODEL_PATH}")
+        # Load A2C model (dùng chung cho cả 3 services)
+        from stable_baselines3 import A2C
+        self.model = A2C.load(MODEL_PATH)
+        logger.info(f"Loaded A2C model from {MODEL_PATH}")
 
         # Load scaler 6 features (dùng chung cho cả 3 services)
         self.scaler = joblib.load(SCALER_PATH)
@@ -178,22 +178,28 @@ class DRLAutoscalerAgent:
     def collect_metrics(self, service: str) -> Optional[Dict[str, float]]:
         """Thu thập 5 metrics từ Prometheus cho 1 service."""
         q = self.queries[service]
-        cpu      = self.prom.query(q["cpu"])
-        memory   = self.prom.query(q["memory"])
-        latency  = self.prom.query(q["latency"])
-        rps      = self.prom.query(q["rps"])
-        replicas = self.prom.query(q["replicas"])
+        cpu_total    = self.prom.query(q["cpu"])
+        memory_total = self.prom.query(q["memory"])
+        latency      = self.prom.query(q["latency"])
+        rps          = self.prom.query(q["rps"])
+        replicas     = self.prom.query(q["replicas"])
 
         if replicas is None or replicas == 0:
             logger.warning(f"[{service}] replicas returned None, skipping")
             return None
 
+        reps = int(replicas)
+
+        # Per-pod conversion - khớp với training data
+        cpu_per_pod    = (cpu_total    or 0.0) / max(reps, 1)
+        memory_per_pod = (memory_total or 0.0) / max(reps, 1)
+
         return {
-            "cpu":      cpu      or 0.0,
-            "memory":   memory   or 0.0,
+            "cpu":      cpu_per_pod,
+            "memory":   memory_per_pod,
             "latency":  latency  or 0.0,
             "rps":      rps      or 0.0,
-            "replicas": int(replicas),
+            "replicas": reps,
         }
 
     def build_state_vector(self, service: str, metrics: Dict[str, float]) -> np.ndarray:
@@ -214,21 +220,13 @@ class DRLAutoscalerAgent:
             delta_rps,
         ]], dtype=np.float32)
 
-        logger.info(f"[{service}] RAW STATE: {state}")
-
-        # Input feature validation - detect abnormal Prometheus values
+        # Input validation
         if np.any(np.isnan(state)) or np.any(state < 0):
-            logger.warning(f"[{service}] Abnormal state detected: {state.flatten()} "
-                          f"(metrics: cpu={metrics['cpu']}, memory={metrics['memory']}, "
-                          f"latency={metrics['latency']}, rps={rps}, replicas={metrics['replicas']}, delta_rps={delta_rps})")
+            logger.warning(f"[{service}] Abnormal state: cpu={metrics['cpu']:.4f}, "
+                          f"mem={metrics['memory']:.0f}, lat={metrics['latency']:.4f}, "
+                          f"rps={rps:.2f}, replicas={metrics['replicas']}, delta_rps={delta_rps:.4f}")
 
-        scaled = self.scaler.transform(state)
-        logger.info(f"[{service}] SCALED STATE: {scaled}")
-
-        clipped = np.clip(scaled, 0.0, 1.0)
-        logger.info(f"[{service}] CLIPPED STATE: {clipped}")
-
-        return clipped
+        return np.clip(self.scaler.transform(state), 0.0, 1.0)
 
     def scale_service(self, service: str) -> None:
         """Scale 1 service: collect → predict → scale."""
@@ -249,16 +247,6 @@ class DRLAutoscalerAgent:
 
         # 4. Build state và predict
         state      = self.build_state_vector(service, metrics)
-        
-        # Debug: Log action probabilities
-        try:
-            obs_tensor, _ = self.model.policy.obs_to_tensor(state)
-            distribution = self.model.policy.get_distribution(obs_tensor)
-            probs = distribution.distribution.probs.detach().cpu().numpy()
-            logger.info(f"[{service}] ACTION PROBS: {probs}")
-        except Exception as e:
-            logger.warning(f"[{service}] Could not extract action probs: {e}")
-        
         action, _  = self.model.predict(state, deterministic=True)
         action_idx = int(action[0]) if isinstance(action, np.ndarray) else int(action)
         delta      = action_idx - 3
