@@ -1,29 +1,36 @@
-"""DRL Autoscaling Agent - Main Loop.
+"""
+DRL Autoscaling Agent - Sequential Multi-Service
+1 pod duy nhất, loop qua 3 services tuần tự.
+Mỗi service dùng cùng 1 model nhưng collect 6 features riêng.
 
-Agent runs an infinite loop that:
-1. Queries Prometheus for 18 metrics (6 per service)
-2. Normalizes state using MinMaxScaler
-3. Runs model.predict() to get action
-4. Converts action index to replica delta
-5. Patches Kubernetes deployment scale
-6. Logs results
+Kiến trúc:
+  - 1 PPO model (train từ productcatalog data)
+  - 1 scaler_single.pkl (6 features)
+  - Mỗi iteration: loop qua cart → product → gateway
+  - Mỗi service: collect 6 metrics → predict action → scale
+
+Env vars:
+  PROMETHEUS_URL:   URL Prometheus in-cluster
+  TARGET_NAMESPACE: namespace của services
+  SCALE_INTERVAL:   interval giữa các lần scale (giây)
+  MODEL_PATH:       path đến PPO model
+  SCALER_PATH:      path đến scaler_single.pkl
+  DRY_RUN:          true/false
 """
 
 import logging
 import os
 import sys
 import time
-from typing import Optional, Dict, List
+from typing import Optional, Dict
 import numpy as np
 import joblib
-
-# Kubernetes
 from kubernetes import client, config as k8s_config
-
-# HTTP
 import requests
 
-# Configure logging
+# ============================================================================
+# Logging
+# ============================================================================
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -32,162 +39,62 @@ logger = logging.getLogger(__name__)
 
 
 # ============================================================================
-# Configuration from Environment
+# Configuration
 # ============================================================================
-
-PROMETHEUS_URL = os.getenv(
-    "PROMETHEUS_URL", 
-    "http://prometheus-server.monitoring.svc.cluster.local"
-)
+PROMETHEUS_URL   = os.getenv("PROMETHEUS_URL", "http://monitoring-kube-prometheus-prometheus.monitoring.svc.cluster.local:9090")
 TARGET_NAMESPACE = os.getenv("TARGET_NAMESPACE", "app")
-SCALE_INTERVAL = int(os.getenv("SCALE_INTERVAL", "15"))  # seconds
-MODEL_PATH = os.getenv("MODEL_PATH", "/app/models/ppo_model_best.zip")
-SCALER_PATH = os.getenv("SCALER_PATH", "/app/models/scaler.pkl")
-DRY_RUN = os.getenv("DRY_RUN", "false").lower() == "true"
+SCALE_INTERVAL   = int(os.getenv("SCALE_INTERVAL", "15"))
+MODEL_PATH       = os.getenv("MODEL_PATH", "/app/models/ppo_single_best.zip")
+SCALER_PATH      = os.getenv("SCALER_PATH", "/app/models/scaler_single.pkl")
+DRY_RUN          = os.getenv("DRY_RUN", "false").lower() == "true"
 
-# Services to scale (order matters for model input!)
+# 3 services cần scale - thứ tự không ảnh hưởng vì mỗi service độc lập
 SERVICES = ["cartservice", "productcatalogservice", "apigateway"]
+
 MIN_REPLICAS = 1
 MAX_REPLICAS = 10
-
-# Prom query timeout
 PROM_TIMEOUT = 10
 
+# Idle detection
+IDLE_RPS_THRESHOLD = 1.0
+IDLE_CPU_THRESHOLD = 0.05
+IDLE_COOLDOWN      = 60
+
 
 # ============================================================================
-# PromQL Queries (Prometheus)
+# PromQL Queries
 # ============================================================================
-
-def get_prom_queries() -> Dict[str, Dict[str, str]]:
-    """Build PromQL queries for all services.
-    
-    Returns:
-        Dict[service] -> Dict[metric] -> PromQL query
-    """
-    queries = {
-        "cartservice": {
-            "cpu": (
-                'sum(rate(container_cpu_usage_seconds_total{'
-                'namespace="app", pod=~"cartservice.*", container!=""}[1m]))'
-            ),
-            "memory": (
-                'sum(container_memory_working_set_bytes{'
-                'namespace="app", pod=~"cartservice.*", container!=""})'
-            ),
-            "latency": (
-                'histogram_quantile(0.95, sum(rate('
-                'http_server_requests_seconds_bucket{'
-                'namespace="app", service="cartservice", uri!~"/actuator.*"'
-                '}[1m])) by (le))'
-            ),
-            "rps": (
-                'sum(rate(http_server_requests_seconds_count{'
-                'namespace="app", service="cartservice", uri!~"/actuator.*"'
-                '}[1m]))'
-            ),
-            "replicas": (
-                'kube_deployment_status_replicas{'
-                'namespace="app", deployment="cartservice"}'
-            ),
-        },
-        "productcatalogservice": {
-            "cpu": (
-                'sum(rate(container_cpu_usage_seconds_total{'
-                'namespace="app", pod=~"productcatalogservice.*", container!=""}[1m]))'
-            ),
-            "memory": (
-                'sum(container_memory_working_set_bytes{'
-                'namespace="app", pod=~"productcatalogservice.*", container!=""})'
-            ),
-            "latency": (
-                'histogram_quantile(0.95, sum(rate('
-                'http_server_requests_seconds_bucket{'
-                'namespace="app", service="productcatalogservice", uri!~"/actuator.*"'
-                '}[1m])) by (le))'
-            ),
-            "rps": (
-                'sum(rate(http_server_requests_seconds_count{'
-                'namespace="app", service="productcatalogservice", uri!~"/actuator.*"'
-                '}[1m]))'
-            ),
-            "replicas": (
-                'kube_deployment_status_replicas{'
-                'namespace="app", deployment="productcatalogservice"}'
-            ),
-        },
-        "apigateway": {
-            "cpu": (
-                'sum(rate(container_cpu_usage_seconds_total{'
-                'namespace="app", pod=~"apigateway.*", container!=""}[1m]))'
-            ),
-            "memory": (
-                'sum(container_memory_working_set_bytes{'
-                'namespace="app", pod=~"apigateway.*", container!=""})'
-            ),
-            "latency": (
-                'histogram_quantile(0.95, sum(rate('
-                'http_server_requests_seconds_bucket{'
-                'namespace="app", service="apigateway"'
-                '}[1m])) by (le))'
-            ),
-            "rps": (
-                'sum(rate(http_server_requests_seconds_count{'
-                'namespace="app", service="apigateway"'
-                '}[1m]))'
-            ),
-            "replicas": (
-                'kube_deployment_status_replicas{'
-                'namespace="app", deployment="apigateway"}'
-            ),
-        },
+def build_queries(service: str) -> Dict[str, str]:
+    """Build PromQL queries cho 1 service (6 metrics)."""
+    is_gateway = (service == "apigateway")
+    uri_filter = '' if is_gateway else ', uri!~"/actuator.*"'
+    ns = TARGET_NAMESPACE
+    return {
+        "cpu":      f'sum(rate(container_cpu_usage_seconds_total{{namespace="{ns}",pod=~"{service}.*",container!=""}}[1m]))',
+        "memory":   f'sum(container_memory_working_set_bytes{{namespace="{ns}",pod=~"{service}.*",container!=""}})',
+        "latency":  f'histogram_quantile(0.95,sum(rate(http_server_requests_seconds_bucket{{namespace="{ns}",service="{service}"{uri_filter}}}[1m]))by(le))',
+        "rps":      f'sum(rate(http_server_requests_seconds_count{{namespace="{ns}",service="{service}"{uri_filter}}}[1m]))',
+        "replicas": f'kube_deployment_status_replicas{{namespace="{ns}",deployment="{service}"}}',
     }
-    return queries
 
 
 # ============================================================================
 # Prometheus Client
 # ============================================================================
-
 class PrometheusClient:
-    """Simple Prometheus query client."""
-    
     def __init__(self, url: str):
-        self.url = url
-        self.query_endpoint = f"{url}/api/v1/query"
-    
+        self.endpoint = f"{url}/api/v1/query"
+
     def query(self, promql: str) -> Optional[float]:
-        """Execute PromQL query and return single scalar value.
-        
-        Args:
-            promql: PromQL query string
-            
-        Returns:
-            Float value or None if query fails/returns no data
-        """
         try:
             resp = requests.get(
-                self.query_endpoint,
+                self.endpoint,
                 params={"query": promql},
                 timeout=PROM_TIMEOUT,
             )
             resp.raise_for_status()
-            
-            data = resp.json()
-            if data.get("status") != "success":
-                logger.warning(f"Prometheus error: {data.get('error')}")
-                return None
-            
-            results = data.get("data", {}).get("result", [])
-            if not results:
-                logger.debug(f"No data for query: {promql[:80]}...")
-                return None
-            
-            # Return first value
-            value_str = results[0].get("value", [None, None])[1]
-            if value_str is None:
-                return None
-                
-            return float(value_str)
+            results = resp.json().get("data", {}).get("result", [])
+            return float(results[0]["value"][1]) if results else None
         except Exception as e:
             logger.error(f"Prometheus query failed: {e}")
             return None
@@ -196,374 +103,217 @@ class PrometheusClient:
 # ============================================================================
 # Kubernetes Client
 # ============================================================================
-
 class KubernetesClient:
-    """Kubernetes API client for scaling."""
-    
     def __init__(self, namespace: str):
         self.namespace = namespace
-        
         try:
             k8s_config.load_incluster_config()
             logger.info("Loaded in-cluster Kubernetes config")
-        except Exception as e:
-            logger.warning(f"In-cluster config failed: {e}, trying local config...")
-            try:
-                k8s_config.load_kube_config()
-                logger.info("Loaded local Kubernetes config")
-            except Exception as e2:
-                logger.error(f"Failed to load Kubernetes config: {e2}")
-                raise
-        
+        except Exception:
+            k8s_config.load_kube_config()
+            logger.info("Loaded local Kubernetes config")
         self.apps_api = client.AppsV1Api()
-    
+
     def get_replicas(self, deployment: str) -> Optional[int]:
-        """Get current replicas for deployment.
-        
-        Args:
-            deployment: Deployment name
-            
-        Returns:
-            Current replica count or None if failed
-        """
         try:
-            dep = self.apps_api.read_namespaced_deployment(deployment, self.namespace)
-            replicas = dep.spec.replicas or 1
-            return replicas
+            dep = self.apps_api.read_namespaced_deployment(
+                name=deployment, namespace=self.namespace
+            )
+            return dep.spec.replicas or 1
         except Exception as e:
-            logger.error(f"Failed to get replicas for {deployment}: {e}")
+            logger.error(f"get_replicas({deployment}) failed: {e}")
             return None
-    
+
     def scale_deployment(self, deployment: str, replicas: int) -> bool:
-        """Scale deployment to target replicas.
-        
-        Args:
-            deployment: Deployment name
-            replicas: Target replica count
-            
-        Returns:
-            True if successful, False otherwise
-        """
         try:
-            body = {"spec": {"replicas": replicas}}
             self.apps_api.patch_namespaced_deployment_scale(
-                deployment, self.namespace, body
+                name=deployment,
+                namespace=self.namespace,
+                body={"spec": {"replicas": replicas}},
             )
             logger.info(f"Scaled {deployment} to {replicas} replicas")
             return True
         except Exception as e:
-            logger.error(f"Failed to scale {deployment}: {e}")
+            logger.error(f"scale_deployment({deployment}) failed: {e}")
             return False
 
 
 # ============================================================================
-# DRL Agent
+# DRL Agent - Sequential Multi-Service
 # ============================================================================
-
 class DRLAutoscalerAgent:
-    """Deep Reinforcement Learning Autoscaler Agent."""
-    
     def __init__(self):
-        logger.info("Initializing DRL Autoscaler Agent...")
-        logger.info(f"  Prometheus URL: {PROMETHEUS_URL}")
-        logger.info(f"  Namespace: {TARGET_NAMESPACE}")
-        logger.info(f"  Scale interval: {SCALE_INTERVAL}s")
-        logger.info(f"  Model path: {MODEL_PATH}")
-        logger.info(f"  Scaler path: {SCALER_PATH}")
-        logger.info(f"  DRY_RUN: {DRY_RUN}")
-        
-        # Load model
-        try:
-            from stable_baselines3 import PPO
-            self.model = PPO.load(MODEL_PATH)
-            logger.info(f"Loaded PPO model from {MODEL_PATH}")
-        except Exception as e:
-            logger.error(f"Failed to load model: {e}")
-            raise
-        
-        # Load scaler
-        try:
-            self.scaler = joblib.load(SCALER_PATH)
-            logger.info(f"Loaded MinMaxScaler from {SCALER_PATH}")
-        except Exception as e:
-            logger.error(f"Failed to load scaler: {e}")
-            raise
-        
-        # Initialize clients
-        self.prom_client = PrometheusClient(PROMETHEUS_URL)
-        self.k8s_client = KubernetesClient(TARGET_NAMESPACE)
-        
-        # PromQL queries
-        self.queries = get_prom_queries()
-        
-        # State tracking
-        self.prev_rps = {service: 0.0 for service in SERVICES}
+        logger.info("Initializing DRL Autoscaler Agent (Sequential Multi-Service)...")
+        logger.info(f"  Services:        {SERVICES}")
+        logger.info(f"  Prometheus URL:  {PROMETHEUS_URL}")
+        logger.info(f"  Namespace:       {TARGET_NAMESPACE}")
+        logger.info(f"  Scale interval:  {SCALE_INTERVAL}s")
+        logger.info(f"  Model path:      {MODEL_PATH}")
+        logger.info(f"  Scaler path:     {SCALER_PATH}")
+        logger.info(f"  DRY_RUN:         {DRY_RUN}")
+
+        # Load PPO model (dùng chung cho cả 3 services)
+        from stable_baselines3 import PPO
+        self.model = PPO.load(MODEL_PATH)
+        logger.info(f"Loaded PPO model from {MODEL_PATH}")
+
+        # Load scaler 6 features (dùng chung cho cả 3 services)
+        self.scaler = joblib.load(SCALER_PATH)
+        logger.info(f"Loaded scaler from {SCALER_PATH}")
+
+        # Clients
+        self.prom = PrometheusClient(PROMETHEUS_URL)
+        self.k8s  = KubernetesClient(TARGET_NAMESPACE)
+
+        # Build queries cho từng service
+        self.queries = {svc: build_queries(svc) for svc in SERVICES}
+
+        # Per-service state tracking
+        self.prev_rps = {svc: 0.0 for svc in SERVICES}
+        self.last_idle_scaledown_time = {svc: 0 for svc in SERVICES}
+
         self.iteration = 0
-        self.last_idle_scaledown_time = 0
-        
         logger.info("DRL Autoscaler Agent initialized successfully")
-    
-    def collect_metrics(self) -> Optional[Dict[str, Dict[str, float]]]:
-        """Collect all metrics from Prometheus.
-        
-        Returns:
-            Dict[service] -> Dict[metric] -> value, or None if critical failure
-        """
-        metrics = {}
-        
-        for service in SERVICES:
-            metrics[service] = {}
-            service_queries = self.queries[service]
-            
-            for metric, query in service_queries.items():
-                value = self.prom_client.query(query)
-                
-                # Handle None values
-                if value is None:
-                    if metric == "replicas":
-                        # Skip if replicas is None
-                        logger.warning(
-                            f"[{service}] {metric} returned None, "
-                            "skipping this step"
-                        )
-                        return None
-                    else:
-                        # Use 0.0 for other metrics
-                        value = 0.0
-                        logger.debug(f"[{service}] {metric} = None, using 0.0")
-                
-                metrics[service][metric] = value
-                logger.debug(f"[{service}] {metric} = {value}")
-        
-        return metrics
-    
-    def build_state_vector(self, metrics: Dict[str, Dict]) -> np.ndarray:
-        """Build 18-feature state vector in correct order.
-        
-        Order (MUST NOT CHANGE):
-        [0]   cpu_cart
-        [1]   memory_cart
-        [2]   latency_cart
-        [3]   rps_cart
-        [4]   replicas_cart
-        [5]   delta_rps_cart
-        
-        [6]   cpu_product
-        [7]   memory_product
-        [8]   latency_product
-        [9]   rps_product
-        [10]  replicas_product
-        [11]  delta_rps_product
-        
-        [12]  cpu_gateway
-        [13]  memory_gateway
-        [14]  latency_gateway
-        [15]  rps_gateway
-        [16]  replicas_gateway
-        [17]  delta_rps_gateway
-        """
-        state = []
-        
-        for service in SERVICES:  # ["cartservice", "productcatalogservice", "apigateway"]
-            service_metrics = metrics[service]
-            
-            # cpu, memory, latency, rps, replicas
-            cpu = service_metrics.get("cpu", 0.0)
-            memory = service_metrics.get("memory", 0.0)
-            latency = service_metrics.get("latency", 0.0)  # already in seconds
-            rps = service_metrics.get("rps", 0.0)
-            replicas = service_metrics.get("replicas", 0.0)
-            
-            # Calculate delta_rps
-            delta_rps = rps - self.prev_rps[service]
-            self.prev_rps[service] = rps
-            
-            # Append in order: cpu, memory, latency, rps, replicas, delta_rps
-            state.extend([
-                cpu,
-                memory,
-                latency,
-                rps,
-                replicas,
-                delta_rps,
-            ])
-        
-        state_array = np.array(state, dtype=np.float32).reshape(1, -1)
-        
-        logger.debug(f"Raw state vector (shape {state_array.shape}): {state_array}")
-        
-        # Normalize + clip to [0,1] to match training distribution
-        normalized_state = np.clip(
-            self.scaler.transform(state_array), 0.0, 1.0
-        )
-        
-        logger.debug(f"Normalized state: {normalized_state}")
-        
-        return normalized_state
-    
-    def action_to_delta_replicas(self, action_indices: np.ndarray) -> Dict[str, int]:
-        """Convert action indices to replica deltas.
-        
-        Action space: indices 0-6 map to delta -3 to +3
-        
-        Args:
-            action_indices: Array of 3 action indices [0..6]
-            
-        Returns:
-            Dict[service] -> delta_replicas
-        """
-        delta_map = {
-            0: -3,
-            1: -2,
-            2: -1,
-            3: 0,
-            4: +1,
-            5: +2,
-            6: +3,
+
+    def collect_metrics(self, service: str) -> Optional[Dict[str, float]]:
+        """Thu thập 5 metrics từ Prometheus cho 1 service."""
+        q = self.queries[service]
+        cpu      = self.prom.query(q["cpu"])
+        memory   = self.prom.query(q["memory"])
+        latency  = self.prom.query(q["latency"])
+        rps      = self.prom.query(q["rps"])
+        replicas = self.prom.query(q["replicas"])
+
+        if replicas is None or replicas == 0:
+            logger.warning(f"[{service}] replicas returned None, skipping")
+            return None
+
+        return {
+            "cpu":      cpu      or 0.0,
+            "memory":   memory   or 0.0,
+            "latency":  latency  or 0.0,
+            "rps":      rps      or 0.0,
+            "replicas": int(replicas),
         }
-        
-        deltas = {}
-        for service, action_idx in zip(SERVICES, action_indices):
-            action_idx = int(action_idx)  # Ensure int
-            delta = delta_map.get(action_idx, 0)
-            deltas[service] = delta
-            logger.info(f"[{service}] action_index={action_idx} → delta={delta:+d}")
-        
-        return deltas
-    
-    def apply_scaling(self, deltas: Dict[str, int], current_replicas: Dict[str, int]) -> None:
-        """Apply scaling actions to deployments.
-        
-        Args:
-            deltas: Dict[service] -> delta_replicas
-            current_replicas: Dict[service] -> current_replicas
+
+    def build_state_vector(self, service: str, metrics: Dict[str, float]) -> np.ndarray:
         """
-        for service, delta in deltas.items():
-            if delta == 0:
-                logger.info(f"[{service}] No scaling action (delta=0)")
-                continue
-            
-            current = current_replicas[service]
-            new_replicas = max(MIN_REPLICAS, min(MAX_REPLICAS, current + delta))
-            
-            logger.info(
-                f"[{service}] Scaling: {current} → {new_replicas} "
-                f"(delta={delta:+d})"
-            )
-            
-            if DRY_RUN:
-                logger.info(f"[{service}] DRY_RUN: skipping actual scale")
-            else:
-                self.k8s_client.scale_deployment(service, new_replicas)
-    
-    def run_once(self) -> bool:
-        """Run one autoscaling iteration.
-        
-        Returns:
-            True if iteration completed, False if skipped due to error
+        Build 6-feature state cho 1 service:
+        [cpu, memory, latency, rps, replicas, delta_rps]
         """
-        self.iteration += 1
-        logger.info(f"\n{'='*70}")
-        logger.info(f"Iteration {self.iteration}")
-        logger.info(f"{'='*70}")
-        
-        # Collect metrics
-        logger.info("Collecting metrics from Prometheus...")
-        metrics = self.collect_metrics()
+        rps = metrics["rps"]
+        delta_rps = rps - self.prev_rps[service]
+        self.prev_rps[service] = rps
+
+        state = np.array([[
+            metrics["cpu"],
+            metrics["memory"],
+            metrics["latency"],
+            rps,
+            metrics["replicas"],
+            delta_rps,
+        ]], dtype=np.float32)
+
+        # Input feature validation - detect abnormal Prometheus values
+        if np.any(np.isnan(state)) or np.any(state < 0):
+            logger.warning(f"[{service}] Abnormal state detected: {state.flatten()} "
+                          f"(metrics: cpu={metrics['cpu']}, memory={metrics['memory']}, "
+                          f"latency={metrics['latency']}, rps={rps}, replicas={metrics['replicas']}, delta_rps={delta_rps})")
+
+        return np.clip(self.scaler.transform(state), 0.0, 1.0)
+
+    def scale_service(self, service: str) -> None:
+        """Scale 1 service: collect → predict → scale."""
+        # 1. Thu metrics
+        metrics = self.collect_metrics(service)
         if metrics is None:
-            logger.warning("Skipping iteration due to missing critical metrics")
-            return False
-        
-        # Get current replicas
-        current_replicas = {}
+            return
+
+        current_replicas = metrics["replicas"]
+        rps = metrics["rps"]
+        cpu = metrics["cpu"]
+
+        logger.info(
+            f"[{service}] replicas={current_replicas} | "
+            f"rps={rps:.2f} | cpu={cpu:.4f} | "
+            f"lat={metrics['latency']*1000:.1f}ms"
+        )
+
+        # 2. Idle detection → force scale down
+        if rps < IDLE_RPS_THRESHOLD and cpu < IDLE_CPU_THRESHOLD:
+            logger.info(f"[{service}] Idle (rps={rps:.2f}, cpu={cpu:.3f}) → scale down to 1")
+            if current_replicas > 1:
+                if not DRY_RUN:
+                    self.k8s.scale_deployment(service, 1)
+                logger.info(f"[{service}] Idle scale down: {current_replicas} → 1")
+            self.last_idle_scaledown_time[service] = time.time()
+            return
+
+        # 3. Cooldown sau idle
+        time_since = time.time() - self.last_idle_scaledown_time[service]
+        if time_since < IDLE_COOLDOWN and rps < 10.0 and cpu < 0.1:
+            remaining = int(IDLE_COOLDOWN - time_since)
+            logger.info(f"[{service}] Post-idle cooldown ({remaining}s remaining)")
+            return
+
+        # 4. Build state và predict
+        state      = self.build_state_vector(service, metrics)
+        action, _  = self.model.predict(state, deterministic=True)
+        action_idx = int(action)
+        delta      = action_idx - 3
+        logger.info(f"[{service}] action={action_idx} → delta={delta:+d}")
+
+        # 5. Scale
+        new_replicas = int(np.clip(current_replicas + delta, MIN_REPLICAS, MAX_REPLICAS))
+        if new_replicas != current_replicas:
+            direction = "↑" if delta > 0 else "↓"
+            logger.info(f"[{service}] Scaling: {current_replicas} {direction} {new_replicas}")
+            if not DRY_RUN:
+                self.k8s.scale_deployment(service, new_replicas)
+        else:
+            logger.info(f"[{service}] No scaling action (delta=0)")
+
+    def run_once(self) -> None:
+        """1 iteration: loop qua cả 3 services tuần tự."""
+        self.iteration += 1
+        logger.info(f"\n{'='*60}")
+        logger.info(f"Iteration {self.iteration}")
+        logger.info(f"{'='*60}")
+
         for service in SERVICES:
-            replicas = self.k8s_client.get_replicas(service)
-            if replicas is None:
-                replicas = 1
-            current_replicas[service] = replicas
-            logger.info(f"[{service}] Current replicas: {replicas}")
-        
-        # Check idle state
-        total_rps = sum(metrics[svc].get('rps', 0) for svc in SERVICES)
-        total_cpu = sum(metrics[svc].get('cpu', 0) for svc in SERVICES)
-        
-        # Thresholds for idle detection
-        IDLE_RPS_THRESHOLD = 1.0   # req/s
-        IDLE_CPU_THRESHOLD = 0.05  # cores
-        IDLE_COOLDOWN = 60  # seconds
-        
-        # If system is idle → force scale down to minimum
-        if total_rps < IDLE_RPS_THRESHOLD and total_cpu < IDLE_CPU_THRESHOLD:
-            logger.info(
-                f"System idle (rps={total_rps:.2f}, cpu={total_cpu:.3f}), "
-                "forcing scale down to minimum"
-            )
-            for svc in SERVICES:
-                current = current_replicas.get(svc, 1)
-                if current > 1:
-                    self.k8s_client.scale_deployment(svc, 1)
-                    logger.info(f"[{svc}] Idle scale down: {current} → 1")
-            self.last_idle_scaledown_time = time.time()
-            return True
-        
-        # Cooldown - skip prediction only if still idle
-        # If load increases → bypass cooldown immediately
-        time_since_scaledown = time.time() - self.last_idle_scaledown_time
-        still_in_cooldown = time_since_scaledown < IDLE_COOLDOWN
-        still_idle = total_rps < 10.0 and total_cpu < 0.1  # based on actual data
-        
-        if still_in_cooldown and still_idle:
-            remaining = int(IDLE_COOLDOWN - time_since_scaledown)
-            logger.info(f"Post-idle cooldown ({remaining}s remaining), skipping predict")
-            return True
-        
-        # Normal mode: predict action from model
-        logger.info("Building state vector...")
-        state = self.build_state_vector(metrics)
-        
-        # Predict action
-        logger.info("Predicting action...")
-        action, _ = self.model.predict(state, deterministic=True)
-        action = action.flatten()  # (1,3) → (3,)
-        logger.info(f"Raw action output: {action}")
-        
-        # Convert to deltas
-        deltas = self.action_to_delta_replicas(action)
-        
-        # Apply scaling
-        logger.info("Applying scaling decisions...")
-        self.apply_scaling(deltas, current_replicas)
-        
-        return True
-    
+            try:
+                self.scale_service(service)
+            except Exception as e:
+                logger.error(f"[{service}] Error: {e}", exc_info=True)
+
     def run(self) -> None:
-        """Run infinite autoscaling loop."""
+        """Infinite autoscaling loop."""
         logger.info(f"Starting autoscaling loop (interval={SCALE_INTERVAL}s)...")
-        
         try:
             while True:
+                tick_start = time.time()
                 try:
                     self.run_once()
                 except Exception as e:
-                    logger.error(f"Error in autoscaling loop: {e}", exc_info=True)
-                
-                logger.info(f"Sleeping {SCALE_INTERVAL}s until next iteration...")
-                time.sleep(SCALE_INTERVAL)
+                    logger.error(f"Error in loop: {e}", exc_info=True)
+
+                # Giữ đúng interval
+                elapsed    = time.time() - tick_start
+                sleep_time = max(0, SCALE_INTERVAL - elapsed)
+                logger.info(f"Sleeping {sleep_time:.1f}s until next iteration...")
+                time.sleep(sleep_time)
         except KeyboardInterrupt:
             logger.info("Autoscaler stopped by user")
         except Exception as e:
-            logger.error(f"Fatal error in autoscaler: {e}", exc_info=True)
+            logger.error(f"Fatal error: {e}", exc_info=True)
             sys.exit(1)
 
 
 # ============================================================================
 # Main
 # ============================================================================
-
 def main():
-    """Main entry point."""
-    agent = DRLAutoscalerAgent()
-    agent.run()
+    DRLAutoscalerAgent().run()
 
 
 if __name__ == "__main__":

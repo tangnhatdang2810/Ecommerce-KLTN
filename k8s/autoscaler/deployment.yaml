@@ -1,5 +1,9 @@
 ---
-# DRL Autoscaler Deployment
+# ================================================================
+# DRL Autoscaler - 1 Pod scale 3 services tuần tự
+# Model: ppo_single_best.zip (train từ productcatalog data)
+# Scaler: scaler_single.pkl (6 features)
+# ================================================================
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -8,8 +12,7 @@ metadata:
   labels:
     app: drl-autoscaler
 spec:
-  revisionHistoryLimit: 3
-  replicas: 1  # Only 1 instance to avoid scaling conflicts
+  replicas: 1  # 1 pod duy nhất - tránh conflict khi scale
   selector:
     matchLabels:
       app: drl-autoscaler
@@ -23,36 +26,23 @@ spec:
 
       containers:
         - name: autoscaler
-          # Update tag as needed during CI/CD
-          image: tangnhatdang/ecommerce-kltn-autoscaler:de155f1
+          image: tangnhatdang/ecommerce-kltn-autoscaler:latest
           imagePullPolicy: Always
 
           env:
-            # Prometheus URL (in-cluster)
             - name: PROMETHEUS_URL
               value: "http://monitoring-kube-prometheus-prometheus.monitoring.svc.cluster.local:9090"
-            
-            # Kubernetes namespace where services are deployed
             - name: TARGET_NAMESPACE
               value: "app"
-            
-            # Scaling interval in seconds
             - name: SCALE_INTERVAL
               value: "15"
-            
-            # Model path inside container
             - name: MODEL_PATH
-              value: "/app/models/ppo_model_best.zip"
-            
-            # Scaler path inside container
+              value: "/app/models/ppo_single_best.zip"
             - name: SCALER_PATH
-              value: "/app/models/scaler.pkl"
-            
-            # Set to "true" for dry-run mode (logs actions but doesn't scale)
+              value: "/app/models/scaler_single.pkl"
             - name: DRY_RUN
               value: "false"
 
-          # Resource limits
           resources:
             requests:
               cpu: 100m
@@ -61,7 +51,6 @@ spec:
               cpu: 500m
               memory: 512Mi
 
-          # Health check
           livenessProbe:
             exec:
               command:
@@ -71,8 +60,6 @@ spec:
             initialDelaySeconds: 30
             periodSeconds: 30
 
-          # Logging
           securityContext:
             runAsNonRoot: true
             runAsUser: 1000
-

@@ -25,9 +25,9 @@ INTERVAL = 15  # giây
 
 SERVICES = ["cartservice", "productcatalogservice", "apigateway"]
 
-OUTPUT_DIR = "data/session2_spike_extra"  # đổi cho mỗi session
+OUTPUT_DIR = "data/session4"  # đổi cho mỗi session
 # session1: "data/session1_constant"
-# session2: "data/session2_spike"
+# session2: "data/session2_spike", "data/session2_spike_extra"
 # session3: "data/session3_periodic"
 # ====================================================
 
