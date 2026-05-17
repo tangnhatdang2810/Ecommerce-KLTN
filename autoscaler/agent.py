@@ -239,23 +239,6 @@ class DRLAutoscalerAgent:
             f"lat={metrics['latency']*1000:.1f}ms"
         )
 
-        # 2. Idle detection → force scale down
-        if rps < IDLE_RPS_THRESHOLD and cpu < IDLE_CPU_THRESHOLD:
-            logger.info(f"[{service}] Idle (rps={rps:.2f}, cpu={cpu:.3f}) → scale down to 1")
-            if current_replicas > 1:
-                if not DRY_RUN:
-                    self.k8s.scale_deployment(service, 1)
-                logger.info(f"[{service}] Idle scale down: {current_replicas} → 1")
-            self.last_idle_scaledown_time[service] = time.time()
-            return
-
-        # 3. Cooldown sau idle
-        time_since = time.time() - self.last_idle_scaledown_time[service]
-        if time_since < IDLE_COOLDOWN and rps < 10.0 and cpu < 0.1:
-            remaining = int(IDLE_COOLDOWN - time_since)
-            logger.info(f"[{service}] Post-idle cooldown ({remaining}s remaining)")
-            return
-
         # 4. Build state và predict
         state      = self.build_state_vector(service, metrics)
         action, _  = self.model.predict(state, deterministic=True)
