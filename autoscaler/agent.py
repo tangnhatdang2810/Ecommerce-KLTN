@@ -214,13 +214,21 @@ class DRLAutoscalerAgent:
             delta_rps,
         ]], dtype=np.float32)
 
+        logger.info(f"[{service}] RAW STATE: {state}")
+
         # Input feature validation - detect abnormal Prometheus values
         if np.any(np.isnan(state)) or np.any(state < 0):
             logger.warning(f"[{service}] Abnormal state detected: {state.flatten()} "
                           f"(metrics: cpu={metrics['cpu']}, memory={metrics['memory']}, "
                           f"latency={metrics['latency']}, rps={rps}, replicas={metrics['replicas']}, delta_rps={delta_rps})")
 
-        return np.clip(self.scaler.transform(state), 0.0, 1.0)
+        scaled = self.scaler.transform(state)
+        logger.info(f"[{service}] SCALED STATE: {scaled}")
+
+        clipped = np.clip(scaled, 0.0, 1.0)
+        logger.info(f"[{service}] CLIPPED STATE: {clipped}")
+
+        return clipped
 
     def scale_service(self, service: str) -> None:
         """Scale 1 service: collect → predict → scale."""
@@ -241,8 +249,18 @@ class DRLAutoscalerAgent:
 
         # 4. Build state và predict
         state      = self.build_state_vector(service, metrics)
+        
+        # Debug: Log action probabilities
+        try:
+            obs_tensor, _ = self.model.policy.obs_to_tensor(state)
+            distribution = self.model.policy.get_distribution(obs_tensor)
+            probs = distribution.distribution.probs.detach().cpu().numpy()
+            logger.info(f"[{service}] ACTION PROBS: {probs}")
+        except Exception as e:
+            logger.warning(f"[{service}] Could not extract action probs: {e}")
+        
         action, _  = self.model.predict(state, deterministic=True)
-        action_idx = int(action)
+        action_idx = int(action[0]) if isinstance(action, np.ndarray) else int(action)
         delta      = action_idx - 3
         logger.info(f"[{service}] action={action_idx} → delta={delta:+d}")
 
